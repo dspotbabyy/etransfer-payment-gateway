@@ -1,0 +1,15 @@
+services:
+  # Web Service
+  - type: web
+    name: etransfer-api
+    env: production
+    plan: free
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        value: postgresql://etransfer_user:KuzTOY6Zqt9O9pyFqAJClty7vM92C35v@dpg-d1uvnnndiees73b5g020-a.oregon-postgres.render.com/etransfer_db
+    healthCheckPath: /health 
