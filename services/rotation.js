@@ -29,11 +29,11 @@ const pickAlias = async (amount_cents) => {
     const currentTime = new Date();
 
     const query = `
-      SELECT email, bank_slug, id as alias_id, weight, last_used_at, daily_total_cents, cool_off_minutes
+      SELECT alias_email as email, bank_slug, id as alias_id, weight, last_used_at, daily_total_cents, cool_off_minutes
       FROM email_aliases
       WHERE active = 1
         AND (daily_total_cents + ?) < daily_cap_cents
-        AND (last_used_at IS NULL OR datetime(last_used_at, '+' || cool_off_minutes || ' minutes') <= datetime('now'))
+        AND (last_used_at IS NULL OR last_used_at + INTERVAL '1 minute' * cool_off_minutes <= NOW())
       ORDER BY weight DESC, last_used_at ASC
       LIMIT 1
     `;
@@ -47,7 +47,7 @@ const pickAlias = async (amount_cents) => {
     const selectedAlias = aliases[0];
 
     await dbRun(
-      'UPDATE email_aliases SET last_used_at = datetime(\'now\'), daily_total_cents = daily_total_cents + ? WHERE id = ?',
+      'UPDATE email_aliases SET last_used_at = NOW(), daily_total_cents = daily_total_cents + ? WHERE id = ?',
       [amount_cents, selectedAlias.alias_id]
     );
 

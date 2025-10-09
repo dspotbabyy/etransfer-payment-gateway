@@ -1,3 +1,4 @@
+require('dotenv').config();
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
@@ -127,7 +128,18 @@ const runMigrations = () => {
           .sort();
 
         // Find new migrations to apply
-        const pendingMigrations = migrationFiles.filter(file => !appliedFiles.includes(file));
+        let pendingMigrations = migrationFiles.filter(file => !appliedFiles.includes(file));
+        
+        // Filter migrations based on database type
+        if (isProduction && DATABASE_URL) {
+          // PostgreSQL - use files without _sqlite suffix
+          pendingMigrations = pendingMigrations.filter(file => !file.includes('_sqlite'));
+        } else {
+          // SQLite - use files with _sqlite suffix or files without database-specific suffix
+          pendingMigrations = pendingMigrations.filter(file => 
+            file.includes('_sqlite') || (!file.includes('_sqlite') && !file.includes('_postgres'))
+          );
+        }
 
         if (pendingMigrations.length === 0) {
           console.log('✅ No pending migrations to apply');

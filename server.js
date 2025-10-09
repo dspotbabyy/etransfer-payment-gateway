@@ -4,8 +4,9 @@ const bodyParser = require('body-parser');
 const { initDatabase } = require('./database');
 const ordersRouter = require('./routes/orders');
 const authRouter = require('./routes/auth');
-const instructionsRouter = require('./routes/instructions');
-const { scheduleDigest } = require('./cron/digest');
+// Temporarily skip Redis-dependent routes
+// const instructionsRouter = require('./routes/instructions');
+// const { scheduleDigest } = require('./cron/digest');
 
 // Force deployment trigger - Test PostgreSQL persistence (Round 2)
 const app = express();
@@ -19,7 +20,8 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Routes
 app.use('/api/orders', ordersRouter);
 app.use('/api/auth', authRouter);
-app.use('/', instructionsRouter);
+// Temporarily skip Redis-dependent routes
+// app.use('/', instructionsRouter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -29,6 +31,56 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// WooCommerce webhook endpoint (optional)
+app.post('/webhook/woocommerce', (req, res) => {
+  try {
+    const signature = req.headers['x-wc-webhook-signature'];
+    const payload = JSON.stringify(req.body);
+    const secret = process.env.WEBHOOK_SECRET;
+    
+    if (!secret) {
+      console.log('⚠️ WEBHOOK_SECRET not configured');
+      return res.status(400).json({ error: 'Webhook secret not configured' });
+    }
+    
+    // Verify webhook signature
+    const crypto = require('crypto');
+    const expectedSignature = crypto
+      .createHmac('sha256', secret)
+      .update(payload)
+      .digest('base64');
+    
+    if (signature !== expectedSignature) {
+      console.log('❌ Invalid webhook signature');
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+    
+    console.log('✅ Valid WooCommerce webhook received:', req.body);
+    
+    // Process the webhook data
+    const orderData = req.body;
+    console.log(`📋 Order ${orderData.id} status: ${orderData.status}`);
+    
+    res.status(200).json({ success: true, message: 'Webhook processed' });
+    
+  } catch (error) {
+    console.error('❌ Webhook processing error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Test webhook endpoint (for testing)
+app.get('/webhook/woocommerce/test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Webhook endpoint is working',
+    timestamp: new Date().toISOString(),
+    endpoint: '/webhook/woocommerce',
+    method: 'POST'
+  });
+});
+
 
 // Debug endpoint for database configuration
 app.get('/debug', (req, res) => {
@@ -119,8 +171,8 @@ const startServer = async () => {
     // Initialize database
     await initDatabase();
 
-    // Initialize cron scheduler
-    scheduleDigest();
+    // Initialize cron scheduler (temporarily disabled)
+    // scheduleDigest();
 
     // Start server
     app.listen(PORT, () => {

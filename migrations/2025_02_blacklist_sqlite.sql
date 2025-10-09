@@ -1,14 +1,14 @@
--- Migration: 2025_02_blacklist.sql
--- Description: Create blacklist table for risk management
+-- Migration: 2025_02_blacklist_sqlite.sql
+-- Description: Create blacklist table for risk management (SQLite version)
 
 -- Blacklist table for storing blocked emails, phones, and IP addresses
 CREATE TABLE IF NOT EXISTS blacklist (
-  id SERIAL PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   email TEXT,
   phone TEXT,
   ip TEXT,
   reason TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   created_by TEXT
 );
 

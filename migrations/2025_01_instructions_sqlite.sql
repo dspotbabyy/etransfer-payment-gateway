@@ -1,9 +1,9 @@
--- Migration: 2025_01_instructions.sql
--- Description: Create email_aliases, payment_instructions, and payment_events tables
+-- Migration: 2025_01_instructions_sqlite.sql
+-- Description: Create email_aliases, payment_instructions, and payment_events tables (SQLite version)
 
 -- Email aliases table for bank account email aliases
 CREATE TABLE IF NOT EXISTS email_aliases (
-  id SERIAL PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   bank_account_id INTEGER,
   alias_email TEXT NOT NULL,
   active INTEGER DEFAULT 1,
@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS email_aliases (
   cool_off_minutes INTEGER DEFAULT 20,
   daily_cap_cents INTEGER DEFAULT 25000000,
   daily_total_cents INTEGER DEFAULT 0,
-  last_used_at TIMESTAMP
+  last_used_at TEXT
 );
 
 -- Payment instructions table for tracking e-transfer requests
@@ -27,13 +27,13 @@ CREATE TABLE IF NOT EXISTS payment_instructions (
   request_ref TEXT,
   status TEXT DEFAULT 'waiting',
   resend_count INTEGER DEFAULT 0,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Payment events table for tracking email notifications and status updates
 CREATE TABLE IF NOT EXISTS payment_events (
-  id SERIAL PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   instruction_id TEXT,
   source TEXT,
   parsed_amount_cents INTEGER,
@@ -42,5 +42,5 @@ CREATE TABLE IF NOT EXISTS payment_events (
   request_ref TEXT,
   status TEXT,
   raw_email TEXT,
-  received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  received_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
