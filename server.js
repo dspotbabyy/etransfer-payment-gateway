@@ -32,6 +32,28 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Simple bank accounts endpoint for WordPress plugin (no auth required)
+app.get('/api/bank-accounts', async (req, res) => {
+  try {
+    const BankAccount = require('./models/BankAccount');
+    const accounts = await BankAccount.getAll();
+    
+    res.json({
+      success: true,
+      message: 'Bank accounts retrieved successfully',
+      data: accounts,
+      total: accounts.length
+    });
+
+  } catch (error) {
+    console.error('Error getting bank accounts:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error when getting bank accounts'
+    });
+  }
+});
+
 // WooCommerce webhook endpoint (optional)
 app.post('/webhook/woocommerce', (req, res) => {
   try {
