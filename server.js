@@ -224,7 +224,7 @@ setInterval(async () => {
   }
 }, 1 * 60 * 1000); // 5 minutes
 
-console.log('🕐 Order validation cron job scheduled to run every 5 minutes');
+console.log('🕐 Order validation cron job scheduled to run every 1 minute');
 
 // Error handling middleware
 app.use((err, req, res, next) => {

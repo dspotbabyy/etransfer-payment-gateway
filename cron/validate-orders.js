@@ -11,13 +11,21 @@ async function validateOrders() {
     console.log('🔍 Starting order validation cron job...');
     
     // Get recent orders that might have wrong bank_account_id
-    const recentOrders = await db.all(`
-      SELECT id, customer_email, bank_account_id, created_at, status
-      FROM orders 
-      WHERE created_at > datetime('now', '-1 hour')
-      AND status = 'pending'
-      ORDER BY created_at DESC
-    `);
+    const recentOrders = await new Promise((resolve, reject) => {
+      db.all(`
+        SELECT id, customer_email, bank_account_id, created_at, status
+        FROM orders 
+        WHERE created_at > datetime('now', '-1 hour')
+        AND status = 'pending'
+        ORDER BY created_at DESC
+      `, (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows || []);
+        }
+      });
+    });
     
     console.log(`📊 Found ${recentOrders.length} recent orders to validate`);
     
@@ -40,10 +48,19 @@ async function validateOrders() {
           console.log(`🔧 Correcting bank_account_id for order ${order.id}: ${order.bank_account_id} -> ${correctBankAccountId}`);
           
           // Update the order with the correct bank_account_id
-          await db.run(
-            'UPDATE orders SET bank_account_id = ? WHERE id = ?',
-            [correctBankAccountId, order.id]
-          );
+          await new Promise((resolve, reject) => {
+            db.run(
+              'UPDATE orders SET bank_account_id = ? WHERE id = ?',
+              [correctBankAccountId, order.id],
+              (err) => {
+                if (err) {
+                  reject(err);
+                } else {
+                  resolve();
+                }
+              }
+            );
+          });
           
           console.log(`✅ Updated order ${order.id} with correct bank_account_id: ${correctBankAccountId}`);
         } else {
