@@ -1,27 +1,41 @@
 const { db } = require('../database.js');
 
-const dbAll = (sql, params = []) => {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(rows);
-      }
+const dbAll = async (sql, params = []) => {
+  if (db.all && typeof db.all === 'function') {
+    // SQLite database
+    return new Promise((resolve, reject) => {
+      db.all(sql, params, (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
     });
-  });
+  } else {
+    // PostgreSQL database
+    const result = await db.query(sql, params);
+    return result.rows || [];
+  }
 };
 
-const dbRun = (sql, params = []) => {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function(err) {
-      if (err) {
-        reject(err);
-      } else {
-        resolve({ lastID: this.lastID, changes: this.changes });
-      }
+const dbRun = async (sql, params = []) => {
+  if (db.run && typeof db.run === 'function') {
+    // SQLite database
+    return new Promise((resolve, reject) => {
+      db.run(sql, params, function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve({ lastID: this.lastID, changes: this.changes });
+        }
+      });
     });
-  });
+  } else {
+    // PostgreSQL database
+    const result = await db.query(sql, params);
+    return { lastID: result.insertId, changes: result.rowCount };
+  }
 };
 
 const pickAlias = async (amount_cents) => {

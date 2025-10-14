@@ -11,21 +11,36 @@ async function validateOrders() {
     console.log('🔍 Starting order validation cron job...');
     
     // Get recent orders that might have wrong bank_account_id
-    const recentOrders = await new Promise((resolve, reject) => {
-      db.all(`
+    let recentOrders;
+    
+    if (db.all && typeof db.all === 'function') {
+      // SQLite database
+      recentOrders = await new Promise((resolve, reject) => {
+        db.all(`
+          SELECT id, customer_email, bank_account_id, created_at, status
+          FROM orders 
+          WHERE created_at > datetime('now', '-1 hour')
+          AND status = 'pending'
+          ORDER BY created_at DESC
+        `, (err, rows) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(rows || []);
+          }
+        });
+      });
+    } else {
+      // PostgreSQL database
+      const result = await db.query(`
         SELECT id, customer_email, bank_account_id, created_at, status
         FROM orders 
-        WHERE created_at > datetime('now', '-1 hour')
+        WHERE created_at > NOW() - INTERVAL '1 hour'
         AND status = 'pending'
         ORDER BY created_at DESC
-      `, (err, rows) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(rows || []);
-        }
-      });
-    });
+      `);
+      recentOrders = result.rows || [];
+    }
     
     console.log(`📊 Found ${recentOrders.length} recent orders to validate`);
     
@@ -48,19 +63,28 @@ async function validateOrders() {
           console.log(`🔧 Correcting bank_account_id for order ${order.id}: ${order.bank_account_id} -> ${correctBankAccountId}`);
           
           // Update the order with the correct bank_account_id
-          await new Promise((resolve, reject) => {
-            db.run(
-              'UPDATE orders SET bank_account_id = ? WHERE id = ?',
-              [correctBankAccountId, order.id],
-              (err) => {
-                if (err) {
-                  reject(err);
-                } else {
-                  resolve();
+          if (db.run && typeof db.run === 'function') {
+            // SQLite database
+            await new Promise((resolve, reject) => {
+              db.run(
+                'UPDATE orders SET bank_account_id = ? WHERE id = ?',
+                [correctBankAccountId, order.id],
+                (err) => {
+                  if (err) {
+                    reject(err);
+                  } else {
+                    resolve();
+                  }
                 }
-              }
+              );
+            });
+          } else {
+            // PostgreSQL database
+            await db.query(
+              'UPDATE orders SET bank_account_id = $1 WHERE id = $2',
+              [correctBankAccountId, order.id]
             );
-          });
+          }
           
           console.log(`✅ Updated order ${order.id} with correct bank_account_id: ${correctBankAccountId}`);
         } else {

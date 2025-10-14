@@ -16,10 +16,25 @@ const worker = new Worker('request-money', async (job) => {
   try {
     const result = await requestbot.submitInstruction(job.data);
 
-    await db.run(
-      'UPDATE payment_instructions SET status = ?, request_ref = ? WHERE id = ?',
-      ['requested', result.requestRef, job.data.id]
-    );
+    if (db.run && typeof db.run === 'function') {
+      // SQLite database
+      await new Promise((resolve, reject) => {
+        db.run(
+          'UPDATE payment_instructions SET status = ?, request_ref = ? WHERE id = ?',
+          ['requested', result.requestRef, job.data.id],
+          function(err) {
+            if (err) reject(err);
+            else resolve(this);
+          }
+        );
+      });
+    } else {
+      // PostgreSQL database
+      await db.query(
+        'UPDATE payment_instructions SET status = $1, request_ref = $2 WHERE id = $3',
+        ['requested', result.requestRef, job.data.id]
+      );
+    }
 
     console.log(`Processed job ${job.id} for instruction ${job.data.id}`);
   } catch (error) {

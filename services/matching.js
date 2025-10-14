@@ -237,16 +237,26 @@ async function processEvent(ev) {
 
   // Always create a payment_event record for debugging
   try {
-    const result = await new Promise((resolve, reject) => {
-      db.run(
-        'INSERT INTO payment_events (source, parsed_amount_cents, payer_handle, recipient_alias, request_ref, status, raw_email, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        ['imap', ev.amount_cents || 0, payerHandle, recipientAlias, requestRef, ev.status || 'unknown', ev.text || '', new Date().toISOString()],
-        function(err) {
-          if (err) reject(err);
-          else resolve(this);
-        }
+    let result;
+    if (db.run && typeof db.run === 'function') {
+      // SQLite database
+      result = await new Promise((resolve, reject) => {
+        db.run(
+          'INSERT INTO payment_events (source, parsed_amount_cents, payer_handle, recipient_alias, request_ref, status, raw_email, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          ['imap', ev.amount_cents || 0, payerHandle, recipientAlias, requestRef, ev.status || 'unknown', ev.text || '', new Date().toISOString()],
+          function(err) {
+            if (err) reject(err);
+            else resolve(this);
+          }
+        );
+      });
+    } else {
+      // PostgreSQL database
+      result = await db.query(
+        'INSERT INTO payment_events (source, parsed_amount_cents, payer_handle, recipient_alias, request_ref, status, raw_email, received_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+        ['imap', ev.amount_cents || 0, payerHandle, recipientAlias, requestRef, ev.status || 'unknown', ev.text || '', new Date().toISOString()]
       );
-    });
+    }
     console.log('✅ Payment event recorded in database');
   } catch (error) {
     console.error('❌ Error recording payment event:', error);
@@ -283,16 +293,26 @@ async function processEvent(ev) {
     console.log('🔍 No exact match found, trying fuzzy matching...');
     
     // Get all orders (not just pending) to see what's available
-    const allOrders = await new Promise((resolve, reject) => {
-      db.all(
-        'SELECT * FROM orders ORDER BY date DESC LIMIT 10',
-        [],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows);
-        }
+    let allOrders;
+    if (db.all && typeof db.all === 'function') {
+      // SQLite database
+      allOrders = await new Promise((resolve, reject) => {
+        db.all(
+          'SELECT * FROM orders ORDER BY date DESC LIMIT 10',
+          [],
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+          }
+        );
+      });
+    } else {
+      // PostgreSQL database
+      const result = await db.query(
+        'SELECT * FROM orders ORDER BY date DESC LIMIT 10'
       );
-    });
+      allOrders = result.rows || [];
+    }
 
     let bestMatch = null;
     let bestScore = 0;
@@ -374,16 +394,25 @@ async function processEvent(ev) {
   }
 
   // Update the order status
-  await new Promise((resolve, reject) => {
-    db.run(
-      'UPDATE orders SET status = ? WHERE id = ?',
-      [newStatus, order.id],
-      function(err) {
-        if (err) reject(err);
-        else resolve(this);
-      }
+  if (db.run && typeof db.run === 'function') {
+    // SQLite database
+    await new Promise((resolve, reject) => {
+      db.run(
+        'UPDATE orders SET status = ? WHERE id = ?',
+        [newStatus, order.id],
+        function(err) {
+          if (err) reject(err);
+          else resolve(this);
+        }
+      );
+    });
+  } else {
+    // PostgreSQL database
+    await db.query(
+      'UPDATE orders SET status = $1 WHERE id = $2',
+      [newStatus, order.id]
     );
-  });
+  }
 
   console.log(`✅ Order ${order.id} updated to status: ${newStatus}`);
 
