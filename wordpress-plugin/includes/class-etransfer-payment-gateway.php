@@ -286,6 +286,7 @@ class ETransfer_Payment_Gateway extends WC_Payment_Gateway {
      * Process the payment and return the result
      */
     public function process_payment($order_id) {
+        error_log('E-Transfer: process_payment called for order ID: ' . $order_id);
         $order = wc_get_order($order_id);
 
         if (!$order) {
@@ -339,7 +340,11 @@ class ETransfer_Payment_Gateway extends WC_Payment_Gateway {
         $api_endpoint = get_option('etransfer_backend_api_endpoint', 'http://ec2-56-228-21-242.eu-north-1.compute.amazonaws.com/api/orders');
         $api_success = false;
 
+        error_log('E-Transfer: Starting API call to: ' . $api_endpoint);
+        error_log('E-Transfer: API endpoint is empty: ' . (empty($api_endpoint) ? 'YES' : 'NO'));
+
         if (!empty($api_endpoint)) {
+            error_log('E-Transfer: API endpoint is not empty, proceeding with API call...');
             // Get bank account ID by looking up the recipient email
             $recipient_email = get_option('etransfer_recipient_email', get_option('admin_email'));
             $bank_account_id = $this->get_bank_account_id_by_email($recipient_email);
@@ -366,6 +371,7 @@ class ETransfer_Payment_Gateway extends WC_Payment_Gateway {
 
             // Log the API request for debugging
             error_log('E-Transfer API Request: ' . json_encode($order_data));
+            error_log('E-Transfer: Making API call to: ' . $api_endpoint);
 
             $response = wp_remote_post($api_endpoint, array(
                 'method'    => 'POST',
@@ -375,6 +381,8 @@ class ETransfer_Payment_Gateway extends WC_Payment_Gateway {
                 ),
                 'timeout'   => 10, // Reduced timeout
             ));
+
+            error_log('E-Transfer: API call completed, checking response...');
 
             if (is_wp_error($response)) {
                 error_log('E-Transfer API Error: ' . $response->get_error_message());
@@ -405,6 +413,9 @@ class ETransfer_Payment_Gateway extends WC_Payment_Gateway {
                     $order->add_order_note(__('E-Transfer API Error: HTTP ' . $response_code . ' - ' . $response_body, 'etransfer-woocommerce'));
                 }
             }
+        } else {
+            error_log('E-Transfer: API endpoint is empty, skipping API call');
+            $order->add_order_note(__('E-Transfer: API endpoint not configured, skipping backend API call.', 'etransfer-woocommerce'));
         }
 
         // Add note about API status

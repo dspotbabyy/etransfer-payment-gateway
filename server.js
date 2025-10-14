@@ -75,6 +75,26 @@ app.get('/api/bank-account-by-email', async (req, res) => {
   }
 });
 
+// Manual endpoint to trigger order validation
+app.post('/api/validate-orders', async (req, res) => {
+  try {
+    console.log('🔧 Manual order validation triggered');
+    await validateOrders();
+    
+    res.json({
+      success: true,
+      message: 'Order validation completed successfully'
+    });
+    
+  } catch (error) {
+    console.error('Error in manual order validation:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error during order validation: ' + error.message
+    });
+  }
+});
+
 
 // WooCommerce webhook endpoint (optional)
 app.post('/webhook/woocommerce', (req, res) => {
@@ -191,6 +211,20 @@ app.get('/', (req, res) => {
     }
   });
 });
+
+// Schedule order validation cron job
+const { validateOrders } = require('./cron/validate-orders');
+
+// Run order validation every 5 minutes
+setInterval(async () => {
+  try {
+    await validateOrders();
+  } catch (error) {
+    console.error('Order validation cron job error:', error);
+  }
+}, 1 * 60 * 1000); // 5 minutes
+
+console.log('🕐 Order validation cron job scheduled to run every 5 minutes');
 
 // Error handling middleware
 app.use((err, req, res, next) => {
