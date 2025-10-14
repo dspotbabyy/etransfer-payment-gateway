@@ -84,13 +84,23 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Check if bank account exists
-    const bankAccount = await Order.findBankAccountById(bank_account_id);
-    if (!bankAccount) {
+    // Validate and correct bank_account_id by looking up customer_email
+    const BankAccount = require('../models/BankAccount');
+    const bankAccountByEmail = await BankAccount.findByEmail(customer_email);
+    
+    if (!bankAccountByEmail) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid bank_account_id: Bank account not found'
+        message: 'No bank account found for customer email: ' + customer_email
       });
+    }
+    
+    // Use the correct bank_account_id from the email lookup
+    const correct_bank_account_id = bankAccountByEmail.id;
+    
+    // Log if the provided bank_account_id was wrong
+    if (bank_account_id !== correct_bank_account_id) {
+      console.log(`Bank account ID corrected: ${bank_account_id} -> ${correct_bank_account_id} for email: ${customer_email}`);
     }
 
     // Create new order
@@ -102,8 +112,11 @@ router.post('/', async (req, res) => {
       customer_email,
       description: description || null,
       ip_address: ip_address || req.ip,
-      bank_account_id
+      bank_account_id: correct_bank_account_id
     });
+
+    // Log successful order creation
+    console.log(`Order created successfully: ID ${newOrder.id}, Bank Account ID: ${correct_bank_account_id}, Customer: ${customer_email}`);
 
     res.status(201).json({
       success: true,
