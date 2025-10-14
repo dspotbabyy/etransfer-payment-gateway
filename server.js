@@ -76,7 +76,7 @@ app.get('/api/bank-account-by-email', async (req, res) => {
 });
 
 // Manual endpoint to trigger order validation
-app.post('/api/validate-orders', async (req, res) => {
+app.get('/api/validate-orders', async (req, res) => {
   try {
     console.log('🔧 Manual order validation triggered');
     await validateOrders();
