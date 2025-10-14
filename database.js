@@ -74,9 +74,40 @@ if (isProduction && DATABASE_URL) {
         return `$${index}`;
       });
       
-      pool.query(query, params || [])
-        .then(result => callback(null, result.rows))
-        .catch(err => callback(err));
+      pool.query(query, params || [], (err, result) => {
+        if (err) {
+          callback(err);
+        } else {
+          callback(null, result.rows);
+        }
+      });
+    },
+    query: async (sql, params) => {
+      const query = sql.replace(/\?/g, (match, offset) => {
+        const index = sql.substring(0, offset).split('?').length;
+        return `$${index}`;
+      });
+      
+      const result = await pool.query(query, params || []);
+      return result;
+    },
+    run: (sql, params, callback) => {
+      const query = sql.replace(/\?/g, (match, offset) => {
+        const index = sql.substring(0, offset).split('?').length;
+        return `$${index}`;
+      });
+      
+      pool.query(query, params || [], (err, result) => {
+        if (err) {
+          callback(err);
+        } else {
+          const mockThis = {
+            lastID: result.insertId || result.rows[0]?.id,
+            changes: result.rowCount || 0
+          };
+          callback(null, mockThis);
+        }
+      });
     }
   };
 } else {

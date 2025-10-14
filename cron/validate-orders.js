@@ -13,15 +13,25 @@ async function validateOrders() {
     // Get recent orders that might have wrong bank_account_id
     let recentOrders;
     
-    if (db.all && typeof db.all === 'function') {
+    if (db.query && typeof db.query === 'function') {
+      // PostgreSQL database
+      const result = await db.query(`
+        SELECT id, customer_email, bank_account_id, date as created_at, status
+        FROM orders 
+        WHERE date > NOW() - INTERVAL '1 hour'
+        AND status = 'pending'
+        ORDER BY date DESC
+      `);
+      recentOrders = result.rows || [];
+    } else {
       // SQLite database
       recentOrders = await new Promise((resolve, reject) => {
         db.all(`
-          SELECT id, customer_email, bank_account_id, created_at, status
+          SELECT id, customer_email, bank_account_id, date as created_at, status
           FROM orders 
-          WHERE created_at > datetime('now', '-1 hour')
+          WHERE date > datetime('now', '-1 hour')
           AND status = 'pending'
-          ORDER BY created_at DESC
+          ORDER BY date DESC
         `, (err, rows) => {
           if (err) {
             reject(err);
@@ -30,16 +40,6 @@ async function validateOrders() {
           }
         });
       });
-    } else {
-      // PostgreSQL database
-      const result = await db.query(`
-        SELECT id, customer_email, bank_account_id, created_at, status
-        FROM orders 
-        WHERE created_at > NOW() - INTERVAL '1 hour'
-        AND status = 'pending'
-        ORDER BY created_at DESC
-      `);
-      recentOrders = result.rows || [];
     }
     
     console.log(`📊 Found ${recentOrders.length} recent orders to validate`);
