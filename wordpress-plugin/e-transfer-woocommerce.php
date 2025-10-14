@@ -594,6 +594,7 @@ class ETransfer_WooCommerce {
         register_setting('etransfer_settings', 'etransfer_enable_qr_codes');
         register_setting('etransfer_settings', 'etransfer_custom_instructions');
         register_setting('etransfer_settings', 'etransfer_backend_api_endpoint');
+        register_setting('etransfer_settings', 'etransfer_bank_account_id');
     }
 
     /**
@@ -626,13 +627,24 @@ class ETransfer_WooCommerce {
                         </th>
                         <td>
                             <input type="url" id="etransfer_backend_api_endpoint" name="etransfer_backend_api_endpoint"
-                                   value="<?php echo esc_attr(get_option('etransfer_backend_api_endpoint', 'https://e-transfer-be.onrender.com/api/orders')); ?>"
-                                   class="regular-text" placeholder="https://e-transfer-be.onrender.com/api/orders" />
+                                   value="<?php echo esc_attr(get_option('etransfer_backend_api_endpoint', 'http://ec2-56-228-21-242.eu-north-1.compute.amazonaws.com/api/orders')); ?>"
+                                   class="regular-text" placeholder="http://ec2-56-228-21-242.eu-north-1.compute.amazonaws.com/api/orders" />
                             <p class="description"><?php _e('Backend API endpoint URL for processing payment orders.', 'etransfer-woocommerce'); ?></p>
                             <p>
                                 <button type="button" id="test-api-connection" class="button"><?php _e('Test API Connection', 'etransfer-woocommerce'); ?></button>
                                 <span id="api-test-result"></span>
                             </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="etransfer_bank_account_id"><?php _e('Bank Account ID', 'etransfer-woocommerce'); ?></label>
+                        </th>
+                        <td>
+                            <input type="number" id="etransfer_bank_account_id" name="etransfer_bank_account_id"
+                                   value="<?php echo esc_attr(get_option('etransfer_bank_account_id', '1')); ?>"
+                                   class="regular-text" min="1" />
+                            <p class="description"><?php _e('Bank account ID for backend API integration. Check your backend database for the correct ID.', 'etransfer-woocommerce'); ?></p>
                         </td>
                     </tr>
                     <tr>
@@ -730,9 +742,10 @@ class ETransfer_WooCommerce {
         $response_body = wp_remote_retrieve_body($response);
 
         if ($response_code === 200) {
-            // Also test bank accounts endpoint
+            // Also test bank account lookup endpoint
             $api_base_url = str_replace('/api/orders', '', $endpoint);
-            $accounts_endpoint = $api_base_url . '/api/bank-accounts';
+            $test_email = get_option('etransfer_recipient_email', get_option('admin_email'));
+            $accounts_endpoint = $api_base_url . '/api/bank-account-by-email?email=' . urlencode($test_email);
             
             $accounts_response = wp_remote_get($accounts_endpoint, array(
                 'timeout' => 10,
@@ -742,10 +755,15 @@ class ETransfer_WooCommerce {
                 wp_send_json_success('API is accessible (HTTP ' . $response_code . ') but bank accounts endpoint failed: ' . $accounts_response->get_error_message());
             } else {
                 $accounts_code = wp_remote_retrieve_response_code($accounts_response);
+                $accounts_body = wp_remote_retrieve_body($accounts_response);
+                
                 if ($accounts_code === 200) {
-                    wp_send_json_success('API and bank accounts endpoint are accessible (HTTP ' . $response_code . ')');
+                    // Parse the response to see what data we get
+                    $accounts_data = json_decode($accounts_body, true);
+                    $bank_account_id = isset($accounts_data['data']['id']) ? $accounts_data['data']['id'] : 'N/A';
+                    wp_send_json_success('API and bank account lookup are accessible (HTTP ' . $response_code . '). Found bank account ID: ' . $bank_account_id . ' for email: ' . $test_email);
                 } else {
-                    wp_send_json_success('API is accessible (HTTP ' . $response_code . ') but bank accounts endpoint returned HTTP ' . $accounts_code);
+                    wp_send_json_success('API is accessible (HTTP ' . $response_code . ') but bank account lookup returned HTTP ' . $accounts_code . ': ' . $accounts_body);
                 }
             }
         } else {
@@ -776,7 +794,8 @@ register_activation_hook(__FILE__, function() {
     add_option('etransfer_recipient_email', get_option('admin_email'));
     add_option('etransfer_enable_qr_codes', 1);
     add_option('etransfer_custom_instructions', '');
-    add_option('etransfer_backend_api_endpoint', 'https://e-transfer-be.onrender.com/api/orders');
+    add_option('etransfer_backend_api_endpoint', 'http://ec2-56-228-21-242.eu-north-1.compute.amazonaws.com/api/orders');
+    add_option('etransfer_bank_account_id', 1);
 
     // Schedule QR code cleanup
     if (!wp_next_scheduled('etransfer_cleanup_qr_files')) {

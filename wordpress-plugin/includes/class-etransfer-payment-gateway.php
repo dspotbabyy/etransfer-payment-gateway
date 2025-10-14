@@ -336,18 +336,20 @@ class ETransfer_Payment_Gateway extends WC_Payment_Gateway {
         }
 
         // Send order data to backend API (optional - don't fail payment if API is down)
-        $api_endpoint = get_option('etransfer_backend_api_endpoint', 'https://e-transfer-be.onrender.com/api/orders');
+        $api_endpoint = get_option('etransfer_backend_api_endpoint', 'http://ec2-56-228-21-242.eu-north-1.compute.amazonaws.com/api/orders');
         $api_success = false;
 
         if (!empty($api_endpoint)) {
-            // First, get bank account ID by email
+            // Get bank account ID by looking up the recipient email
             $recipient_email = get_option('etransfer_recipient_email', get_option('admin_email'));
             $bank_account_id = $this->get_bank_account_id_by_email($recipient_email);
             
             if (!$bank_account_id) {
                 error_log('E-Transfer: Could not find bank account for email: ' . $recipient_email);
-                $order->add_order_note(__('E-Transfer: Could not find bank account for recipient email. Using default bank account ID 1.', 'etransfer-woocommerce'));
+                $order->add_order_note(__('E-Transfer: Could not find bank account for recipient email. Using fallback bank account ID 1.', 'etransfer-woocommerce'));
                 $bank_account_id = 1; // Fallback to default
+            } else {
+                error_log('E-Transfer: Found bank account ID: ' . $bank_account_id . ' for email: ' . $recipient_email);
             }
 
             // Format data according to the API specification
@@ -870,14 +872,14 @@ class ETransfer_Payment_Gateway extends WC_Payment_Gateway {
      * Get bank account ID by email from backend API
      */
     private function get_bank_account_id_by_email($email) {
-        $api_base_url = get_option('etransfer_backend_api_endpoint', 'https://e-transfer-be.onrender.com/api/orders');
+        $api_base_url = get_option('etransfer_backend_api_endpoint', 'http://ec2-56-228-21-242.eu-north-1.compute.amazonaws.com/api/orders');
         $api_base_url = str_replace('/api/orders', '', $api_base_url);
-        $accounts_endpoint = $api_base_url . '/api/bank-accounts';
+        $lookup_endpoint = $api_base_url . '/api/bank-account-by-email?email=' . urlencode($email);
 
         error_log('E-Transfer: Looking up bank account for email: ' . $email);
-        error_log('E-Transfer: API endpoint: ' . $accounts_endpoint);
+        error_log('E-Transfer: API endpoint: ' . $lookup_endpoint);
 
-        $response = wp_remote_get($accounts_endpoint, array(
+        $response = wp_remote_get($lookup_endpoint, array(
             'timeout' => 10,
             'headers' => array(
                 'User-Agent' => 'WordPress-eTransfer-Plugin/1.0'
@@ -885,39 +887,29 @@ class ETransfer_Payment_Gateway extends WC_Payment_Gateway {
         ));
 
         if (is_wp_error($response)) {
-            error_log('E-Transfer: Failed to get bank accounts: ' . $response->get_error_message());
+            error_log('E-Transfer: Failed to get bank account: ' . $response->get_error_message());
             return false;
         }
 
         $response_code = wp_remote_retrieve_response_code($response);
         $response_body = wp_remote_retrieve_body($response);
 
-        error_log('E-Transfer: Bank accounts API response - Code: ' . $response_code . ', Body: ' . $response_body);
+        error_log('E-Transfer: Bank account lookup response - Code: ' . $response_code . ', Body: ' . $response_body);
 
         if ($response_code !== 200) {
-            error_log('E-Transfer: Bank accounts API returned HTTP ' . $response_code . ': ' . $response_body);
+            error_log('E-Transfer: Bank account lookup returned HTTP ' . $response_code . ': ' . $response_body);
             return false;
         }
 
         $data = json_decode($response_body, true);
         
-        if (!$data || !isset($data['data']) || !is_array($data['data'])) {
-            error_log('E-Transfer: Invalid response from bank accounts API. Data structure: ' . print_r($data, true));
+        if (!$data || !isset($data['data']) || !isset($data['data']['id'])) {
+            error_log('E-Transfer: Invalid response from bank account lookup. Data structure: ' . print_r($data, true));
             return false;
         }
 
-        error_log('E-Transfer: Found ' . count($data['data']) . ' bank accounts');
-
-        // Find bank account by email
-        foreach ($data['data'] as $account) {
-            error_log('E-Transfer: Checking account - ID: ' . (isset($account['id']) ? $account['id'] : 'N/A') . ', Email: ' . (isset($account['email']) ? $account['email'] : 'N/A'));
-            if (isset($account['email']) && $account['email'] === $email) {
-                error_log('E-Transfer: Found matching bank account - ID: ' . $account['id'] . ' for email: ' . $email);
-                return $account['id'];
-            }
-        }
-
-        error_log('E-Transfer: No bank account found for email: ' . $email);
-        return false;
+        $bank_account_id = $data['data']['id'];
+        error_log('E-Transfer: Found bank account - ID: ' . $bank_account_id . ' for email: ' . $email);
+        return $bank_account_id;
     }
 }

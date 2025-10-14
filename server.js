@@ -32,27 +32,49 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Simple bank accounts endpoint for WordPress plugin (no auth required)
-app.get('/api/bank-accounts', async (req, res) => {
+// Public endpoint to get bank account by email (for WordPress plugin)
+app.get('/api/bank-account-by-email', async (req, res) => {
   try {
-    const BankAccount = require('./models/BankAccount');
-    const accounts = await BankAccount.getAll();
+    const { email } = req.query;
     
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email parameter is required'
+      });
+    }
+
+    const BankAccount = require('./models/BankAccount');
+    const account = await BankAccount.findByEmail(email);
+    
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bank account not found for this email'
+      });
+    }
+
     res.json({
       success: true,
-      message: 'Bank accounts retrieved successfully',
-      data: accounts,
-      total: accounts.length
+      message: 'Bank account found',
+      data: {
+        id: account.id,
+        email: account.email,
+        username: account.username,
+        first_name: account.first_name,
+        last_name: account.last_name
+      }
     });
 
   } catch (error) {
-    console.error('Error getting bank accounts:', error);
+    console.error('Error getting bank account by email:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error when getting bank accounts'
+      message: 'Server error when getting bank account'
     });
   }
 });
+
 
 // WooCommerce webhook endpoint (optional)
 app.post('/webhook/woocommerce', (req, res) => {
