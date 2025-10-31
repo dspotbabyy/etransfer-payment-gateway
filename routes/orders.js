@@ -51,6 +51,7 @@ router.post('/', async (req, res) => {
   try {
     const { 
       woo_order_id, 
+      woocommerce_order_id, // WordPress plugin sends this
       status, 
       total, 
       customer_name, 
@@ -59,6 +60,9 @@ router.post('/', async (req, res) => {
       ip_address,
       bank_account_id
     } = req.body;
+    
+    // Map woocommerce_order_id to woo_order_id if provided
+    const final_woo_order_id = woo_order_id || woocommerce_order_id || null;
     
     // Validation
     if (!total || !customer_email || !bank_account_id) {
@@ -105,7 +109,7 @@ router.post('/', async (req, res) => {
 
     // Create new order
     const newOrder = await Order.create({
-      woo_order_id: woo_order_id || null,
+      woo_order_id: final_woo_order_id,
       status: status || 'pending',
       total,
       customer_name: customer_name || null,
