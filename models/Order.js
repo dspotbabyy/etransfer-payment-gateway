@@ -85,6 +85,67 @@ class Order {
     });
   }
 
+  // Find duplicate order by bank_account_id, customer_email, and woo_order_id
+  static findDuplicate(criteria) {
+    return new Promise((resolve, reject) => {
+      const { bank_account_id, customer_email, woo_order_id } = criteria;
+      
+      if (!bank_account_id || !customer_email || !woo_order_id) {
+        return resolve(null);
+      }
+
+      // Check if using PostgreSQL or SQLite
+      const isProduction = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
+      
+      let sql;
+      if (isProduction && process.env.DATABASE_URL) {
+        // PostgreSQL
+        sql = `
+          SELECT o.id, o.woo_order_id, o.status, o.date, o.total, o.customer_name, 
+                 o.customer_email, o.description, o.ip_address, o.bank_account_id
+          FROM orders o
+          WHERE o.bank_account_id = $1 
+            AND o.customer_email = $2 
+            AND o.woo_order_id = $3
+          LIMIT 1
+        `;
+      } else {
+        // SQLite
+        sql = `
+          SELECT o.id, o.woo_order_id, o.status, o.date, o.total, o.customer_name, 
+                 o.customer_email, o.description, o.ip_address, o.bank_account_id
+          FROM orders o
+          WHERE o.bank_account_id = ? 
+            AND o.customer_email = ? 
+            AND o.woo_order_id = ?
+          LIMIT 1
+        `;
+      }
+
+      if (isProduction && process.env.DATABASE_URL) {
+        // PostgreSQL - use query
+        db.query(sql, [bank_account_id, customer_email, woo_order_id])
+          .then(result => {
+            if (result.rows && result.rows.length > 0) {
+              resolve(result.rows[0]);
+            } else {
+              resolve(null);
+            }
+          })
+          .catch(err => reject(err));
+      } else {
+        // SQLite - use all
+        db.all(sql, [bank_account_id, customer_email, woo_order_id], (err, rows) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(rows && rows.length > 0 ? rows[0] : null);
+          }
+        });
+      }
+    });
+  }
+
   // Get all orders
   static getAll() {
     return new Promise((resolve, reject) => {

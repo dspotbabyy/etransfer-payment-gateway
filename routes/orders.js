@@ -107,6 +107,25 @@ router.post('/', async (req, res) => {
       console.log(`Bank account ID corrected: ${bank_account_id} -> ${correct_bank_account_id} for email: ${customer_email}`);
     }
 
+    // Check if order already exists with same bank_account_id, customer_email, and woo_order_id
+    if (final_woo_order_id) {
+      const existingOrder = await Order.findDuplicate({
+        bank_account_id: correct_bank_account_id,
+        customer_email: customer_email,
+        woo_order_id: final_woo_order_id
+      });
+
+      if (existingOrder) {
+        console.log(`Duplicate order found: ID ${existingOrder.id}, Bank Account ID: ${correct_bank_account_id}, Customer: ${customer_email}, WooCommerce Order ID: ${final_woo_order_id}`);
+        return res.status(200).json({
+          success: true,
+          message: 'Order already exists',
+          data: existingOrder,
+          duplicate: true
+        });
+      }
+    }
+
     // Create new order
     const newOrder = await Order.create({
       woo_order_id: final_woo_order_id,
