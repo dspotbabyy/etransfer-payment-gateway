@@ -34,24 +34,54 @@ class Order {
         `;
       }
       
-      db.run(sql, [woo_order_id, status, total, customer_name, customer_email, description, ip_address, bank_account_id], function(err) {
-        if (err) {
-          reject(err);
-        } else {
-          resolve({
-            id: this.lastID || 'generated',
-            woo_order_id,
-            status,
-            date: new Date().toISOString(),
-            total,
-            customer_name,
-            customer_email,
-            description,
-            ip_address,
-            bank_account_id
+      if (isProduction && process.env.DATABASE_URL) {
+        // PostgreSQL - use query to get RETURNING id
+        // db.query will automatically convert ? to $1, $2, etc.
+        db.query(sql, [woo_order_id, status, total, customer_name, customer_email, description, ip_address, bank_account_id])
+          .then(result => {
+            if (!result || !result.rows || result.rows.length === 0) {
+              return reject(new Error('Failed to insert order: No rows returned'));
+            }
+            
+            const insertedRow = result.rows[0];
+            resolve({
+              id: insertedRow.id,
+              woo_order_id: insertedRow.woo_order_id,
+              status: insertedRow.status,
+              date: insertedRow.date || new Date().toISOString(),
+              total: insertedRow.total,
+              customer_name: insertedRow.customer_name,
+              customer_email: insertedRow.customer_email,
+              description: insertedRow.description,
+              ip_address: insertedRow.ip_address,
+              bank_account_id: insertedRow.bank_account_id
+            });
+          })
+          .catch(err => {
+            console.error('Error inserting order in PostgreSQL:', err);
+            reject(err);
           });
-        }
-      });
+      } else {
+        // SQLite - use run with callback
+        db.run(sql, [woo_order_id, status, total, customer_name, customer_email, description, ip_address, bank_account_id], function(err) {
+          if (err) {
+            reject(err);
+          } else {
+            resolve({
+              id: this.lastID || 'generated',
+              woo_order_id,
+              status,
+              date: new Date().toISOString(),
+              total,
+              customer_name,
+              customer_email,
+              description,
+              ip_address,
+              bank_account_id
+            });
+          }
+        });
+      }
     });
   }
 
