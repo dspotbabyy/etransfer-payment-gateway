@@ -141,6 +141,12 @@ router.post('/', async (req, res) => {
     // Log successful order creation
     console.log(`Order created successfully: ID ${newOrder.id}, Bank Account ID: ${correct_bank_account_id}, Customer: ${customer_email}`);
 
+    // Send email notifications (async, don't wait)
+    const EmailService = require('../services/emailService');
+    EmailService.sendOrderStatusEmails(newOrder).catch(err => 
+      console.error('Error sending order creation emails:', err)
+    );
+
     res.status(201).json({
       success: true,
       message: 'Order created successfully',
@@ -639,8 +645,19 @@ router.put('/:id', async (req, res) => {
     if (customer_email !== undefined) updateData.customer_email = customer_email;
     if (description !== undefined) updateData.description = description;
 
+    // Store old status for email notification
+    const oldStatus = existingOrder.status;
+    
     // Update order
     const updatedOrder = await Order.update(id, updateData);
+    
+    // Send email notifications if status changed
+    if (status && status !== oldStatus) {
+      const EmailService = require('../services/emailService');
+      EmailService.sendOrderStatusEmails(updatedOrder, oldStatus).catch(err => 
+        console.error('Error sending order status change emails:', err)
+      );
+    }
     
     res.json({
       success: true,

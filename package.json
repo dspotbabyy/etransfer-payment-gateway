@@ -23,6 +23,7 @@
     "nodemailer": "^6.10.1",
     "pg": "^8.11.3",
     "playwright": "^1.55.1",
+    "resend": "^6.4.0",
     "sqlite3": "^5.1.6"
   },
   "devDependencies": {
