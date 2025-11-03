@@ -16,9 +16,20 @@ class EmailService {
     try {
       const BankAccount = require('../models/BankAccount');
       const bankAccount = await BankAccount.getById(bankAccountId);
-      return bankAccount ? bankAccount.email : null;
+      
+      if (bankAccount) {
+        console.log('✅ Merchant email retrieved:', {
+          bankAccountId: bankAccountId,
+          merchantEmail: bankAccount.email,
+          merchantName: bankAccount.username || bankAccount.email
+        });
+        return bankAccount.email;
+      } else {
+        console.error('❌ Bank account not found for ID:', bankAccountId);
+        return null;
+      }
     } catch (error) {
-      console.error('Error getting merchant email:', error);
+      console.error('❌ Error getting merchant email:', error);
       return null;
     }
   }
@@ -83,8 +94,16 @@ class EmailService {
         </html>
       `;
 
+      const fromEmail = process.env.EMAIL_FROM || 'noreply@dexxpay.com';
+      
+      console.log('📧 Sending On Hold email:', {
+        from: fromEmail,
+        to: order.customer_email,
+        orderId: order.id || order.woo_order_id
+      });
+
       const response = await resend.emails.send({
-        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+        from: fromEmail,
         to: order.customer_email,
         subject: subject,
         html: html
@@ -145,8 +164,16 @@ class EmailService {
         </html>
       `;
 
+      const fromEmail = process.env.EMAIL_FROM || 'noreply@dexxpay.com';
+      
+      console.log('📧 Sending New Order email to merchant:', {
+        from: fromEmail,
+        to: merchantEmail,
+        orderId: order.id || order.woo_order_id
+      });
+
       const response = await resend.emails.send({
-        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+        from: fromEmail,
         to: merchantEmail,
         subject: subject,
         html: html
@@ -208,8 +235,16 @@ class EmailService {
         </html>
       `;
 
+      const fromEmail = process.env.EMAIL_FROM || 'noreply@dexxpay.com';
+      
+      console.log('📧 Sending Processing email to customer:', {
+        from: fromEmail,
+        to: order.customer_email,
+        orderId: order.id || order.woo_order_id
+      });
+
       const response = await resend.emails.send({
-        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+        from: fromEmail,
         to: order.customer_email,
         subject: subject,
         html: html
@@ -268,8 +303,16 @@ class EmailService {
         </html>
       `;
 
+      const fromEmail = process.env.EMAIL_FROM || 'noreply@dexxpay.com';
+      
+      console.log('📧 Sending Processing notification to merchant:', {
+        from: fromEmail,
+        to: merchantEmail,
+        orderId: order.id || order.woo_order_id
+      });
+
       const response = await resend.emails.send({
-        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+        from: fromEmail,
         to: merchantEmail,
         subject: subject,
         html: html
@@ -332,8 +375,16 @@ class EmailService {
         </html>
       `;
 
+      const fromEmail = process.env.EMAIL_FROM || 'noreply@dexxpay.com';
+      
+      console.log('📧 Sending Completed email to customer:', {
+        from: fromEmail,
+        to: order.customer_email,
+        orderId: order.id || order.woo_order_id
+      });
+
       const response = await resend.emails.send({
-        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+        from: fromEmail,
         to: order.customer_email,
         subject: subject,
         html: html
@@ -392,8 +443,16 @@ class EmailService {
         </html>
       `;
 
+      const fromEmail = process.env.EMAIL_FROM || 'noreply@dexxpay.com';
+      
+      console.log('📧 Sending Completed notification to merchant:', {
+        from: fromEmail,
+        to: merchantEmail,
+        orderId: order.id || order.woo_order_id
+      });
+
       const response = await resend.emails.send({
-        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+        from: fromEmail,
         to: merchantEmail,
         subject: subject,
         html: html
@@ -413,12 +472,25 @@ class EmailService {
    */
   static async sendOrderStatusEmails(order, previousStatus = null) {
     try {
+      console.log('📧 Starting email notification process:', {
+        orderId: order.id || order.woo_order_id,
+        status: order.status,
+        previousStatus: previousStatus,
+        customerEmail: order.customer_email,
+        bankAccountId: order.bank_account_id
+      });
+
       const merchantEmail = await this.getMerchantEmail(order.bank_account_id);
       
       if (!merchantEmail) {
         console.error('❌ Merchant email not found for bank_account_id:', order.bank_account_id);
         return;
       }
+
+      console.log('✅ Email addresses verified:', {
+        customerEmail: order.customer_email,
+        merchantEmail: merchantEmail
+      });
 
       // Send emails based on current status
       switch (order.status?.toLowerCase()) {
