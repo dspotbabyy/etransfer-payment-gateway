@@ -88,23 +88,48 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Validate and correct bank_account_id by looking up customer_email
+    // Validate bank_account_id exists
+    // IMPORTANT: customer_email is the customer's email (from WooCommerce order) - saved as-is
+    //            merchant email is ONLY used for email notifications (retrieved from bank_accounts table)
     const BankAccount = require('../models/BankAccount');
-    const bankAccountByEmail = await BankAccount.findByEmail(customer_email);
+    const bankAccount = await BankAccount.getById(bank_account_id);
     
-    if (!bankAccountByEmail) {
+    if (!bankAccount) {
       return res.status(400).json({
         success: false,
-        message: 'No bank account found for customer email: ' + customer_email
+        message: 'Bank account not found for bank_account_id: ' + bank_account_id
       });
     }
     
-    // Use the correct bank_account_id from the email lookup
-    const correct_bank_account_id = bankAccountByEmail.id;
+    // Validate and correct bank_account_id using customer_email
+    // This handles cases where WordPress sends wrong bank_account_id
+    // Note: customer_email should NOT match merchant email (they're different)
+    // But we check anyway to correct wrong bank_account_id from WordPress
+    const bankAccountByCustomerEmail = await BankAccount.findByEmail(customer_email);
     
-    // Log if the provided bank_account_id was wrong
-    if (bank_account_id !== correct_bank_account_id) {
-      console.log(`Bank account ID corrected: ${bank_account_id} -> ${correct_bank_account_id} for email: ${customer_email}`);
+    let correct_bank_account_id = bank_account_id;
+    
+    // If customer_email matches a bank account email, it means WordPress sent wrong bank_account_id
+    // Use the correct one, but keep customer_email as-is (it's still the customer's email)
+    if (bankAccountByCustomerEmail && bankAccountByCustomerEmail.id !== bank_account_id) {
+      correct_bank_account_id = bankAccountByCustomerEmail.id;
+      console.log(`⚠️ Bank account ID corrected: ${bank_account_id} -> ${correct_bank_account_id}`);
+      console.log(`   Note: customer_email (${customer_email}) should be customer's email, not merchant's`);
+    }
+    
+    // Log for verification
+    console.log('📝 Order creation:', {
+      customer_email: customer_email,  // Customer's email (saved in order)
+      merchant_email: bankAccount.email,  // Merchant's email (only for notifications)
+      bank_account_id: correct_bank_account_id
+    });
+    
+    // Warning if customer_email matches merchant email (shouldn't happen)
+    if (customer_email === bankAccount.email) {
+      console.warn('⚠️ WARNING: customer_email matches merchant email!', {
+        email: customer_email,
+        message: 'This might indicate customer_email is incorrectly set to merchant email'
+      });
     }
 
     // Check if order already exists with same bank_account_id, customer_email, and woo_order_id
