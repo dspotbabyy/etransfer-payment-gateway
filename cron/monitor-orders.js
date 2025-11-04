@@ -25,9 +25,9 @@ async function monitorOrders() {
     let recentOrders = [];
     
     if (isPostgreSQL) {
-      // PostgreSQL query
+      // PostgreSQL query - include merchant_email from orders table
       const result = await db.query(
-        `SELECT id, woo_order_id, status, customer_email, customer_name, total, bank_account_id, description
+        `SELECT id, woo_order_id, status, customer_email, customer_name, total, bank_account_id, description, merchant_email
          FROM orders
          WHERE status NOT IN ('completed', 'cancelled')
          ORDER BY id DESC
@@ -35,10 +35,10 @@ async function monitorOrders() {
       );
       recentOrders = result.rows || [];
     } else {
-      // SQLite query
+      // SQLite query - include merchant_email from orders table
       recentOrders = await new Promise((resolve, reject) => {
         db.all(
-          `SELECT id, woo_order_id, status, customer_email, customer_name, total, bank_account_id, description
+          `SELECT id, woo_order_id, status, customer_email, customer_name, total, bank_account_id, description, merchant_email
            FROM orders
            WHERE status NOT IN ('completed', 'cancelled')
            ORDER BY id DESC
@@ -86,18 +86,25 @@ async function monitorOrders() {
         if (normalizedLastSeenStatus && normalizedLastSeenStatus !== currentStatus) {
           console.log(`📧 Status changed for order ${orderId}: ${normalizedLastSeenStatus} → ${currentStatus}`);
 
-          // Get merchant email from bank_accounts table
-          let merchantEmail = null;
-          try {
-            const bankAccount = await BankAccount.getById(order.bank_account_id);
-            if (bankAccount) {
-              merchantEmail = bankAccount.email;
-              console.log(`✅ Merchant email found: ${merchantEmail} for bank_account_id: ${order.bank_account_id}`);
-            } else {
-              console.error(`❌ Bank account not found for bank_account_id: ${order.bank_account_id}`);
+          // Get merchant email directly from orders table (stored when order was created)
+          let merchantEmail = order.merchant_email || null;
+          
+          // Fallback: If merchant_email not in orders table, try bank_accounts lookup (for older orders)
+          if (!merchantEmail) {
+            console.log(`⚠️ Merchant email not in orders table for order ${orderId}, trying bank_accounts lookup...`);
+            try {
+              const bankAccount = await BankAccount.getById(order.bank_account_id);
+              if (bankAccount) {
+                merchantEmail = bankAccount.email;
+                console.log(`✅ Merchant email found from bank_accounts: ${merchantEmail} for bank_account_id: ${order.bank_account_id}`);
+              } else {
+                console.error(`❌ Bank account not found for bank_account_id: ${order.bank_account_id}`);
+              }
+            } catch (error) {
+              console.error(`❌ Error getting merchant email for order ${orderId}:`, error);
             }
-          } catch (error) {
-            console.error(`❌ Error getting merchant email for order ${orderId}:`, error);
+          } else {
+            console.log(`✅ Merchant email found from orders table: ${merchantEmail} for order ${orderId}`);
           }
 
           if (!merchantEmail) {
@@ -182,7 +189,7 @@ async function monitorOrders() {
           
           if (isPostgreSQL) {
             const result = await db.query(
-              `SELECT id, woo_order_id, status, customer_email, customer_name, total, bank_account_id, description
+              `SELECT id, woo_order_id, status, customer_email, customer_name, total, bank_account_id, description, merchant_email
                FROM orders
                WHERE id = $1`,
               [cachedOrder.id]
@@ -191,7 +198,7 @@ async function monitorOrders() {
           } else {
             currentOrder = await new Promise((resolve, reject) => {
               db.get(
-                `SELECT id, woo_order_id, status, customer_email, customer_name, total, bank_account_id, description
+                `SELECT id, woo_order_id, status, customer_email, customer_name, total, bank_account_id, description, merchant_email
                  FROM orders
                  WHERE id = ?`,
                 [cachedOrder.id],
@@ -215,16 +222,23 @@ async function monitorOrders() {
               
               console.log(`📧 Order ${cachedOrder.id} transitioned to completed: ${normalizedCachedStatus} → ${currentStatus}`);
               
-              // Get merchant email
-              let merchantEmail = null;
-              try {
-                const bankAccount = await BankAccount.getById(currentOrder.bank_account_id);
-                if (bankAccount) {
-                  merchantEmail = bankAccount.email;
-                  console.log(`✅ Merchant email found: ${merchantEmail} for bank_account_id: ${currentOrder.bank_account_id}`);
+              // Get merchant email directly from orders table (stored when order was created)
+              let merchantEmail = currentOrder.merchant_email || null;
+              
+              // Fallback: If merchant_email not in orders table, try bank_accounts lookup (for older orders)
+              if (!merchantEmail) {
+                console.log(`⚠️ Merchant email not in orders table for order ${cachedOrder.id}, trying bank_accounts lookup...`);
+                try {
+                  const bankAccount = await BankAccount.getById(currentOrder.bank_account_id);
+                  if (bankAccount) {
+                    merchantEmail = bankAccount.email;
+                    console.log(`✅ Merchant email found from bank_accounts: ${merchantEmail} for bank_account_id: ${currentOrder.bank_account_id}`);
+                  }
+                } catch (error) {
+                  console.error(`❌ Error getting merchant email for order ${cachedOrder.id}:`, error);
                 }
-              } catch (error) {
-                console.error(`❌ Error getting merchant email for order ${cachedOrder.id}:`, error);
+              } else {
+                console.log(`✅ Merchant email found from orders table: ${merchantEmail} for order ${cachedOrder.id}`);
               }
               
               if (merchantEmail) {

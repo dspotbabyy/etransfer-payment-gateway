@@ -12,7 +12,8 @@ class Order {
         customer_email, 
         description, 
         ip_address, 
-        bank_account_id 
+        bank_account_id,
+        merchant_email  // Merchant email to store in orders table
       } = orderData;
       
       // Check if using PostgreSQL or SQLite
@@ -22,22 +23,22 @@ class Order {
       if (isProduction && process.env.DATABASE_URL) {
         // PostgreSQL - return the inserted row
         sql = `
-          INSERT INTO orders (woo_order_id, status, total, customer_name, customer_email, description, ip_address, bank_account_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          RETURNING id, woo_order_id, status, date, total, customer_name, customer_email, description, ip_address, bank_account_id
+          INSERT INTO orders (woo_order_id, status, total, customer_name, customer_email, description, ip_address, bank_account_id, merchant_email)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          RETURNING id, woo_order_id, status, date, total, customer_name, customer_email, description, ip_address, bank_account_id, merchant_email
         `;
       } else {
         // SQLite
         sql = `
-          INSERT INTO orders (woo_order_id, status, total, customer_name, customer_email, description, ip_address, bank_account_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO orders (woo_order_id, status, total, customer_name, customer_email, description, ip_address, bank_account_id, merchant_email)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
       }
       
       if (isProduction && process.env.DATABASE_URL) {
         // PostgreSQL - use query to get RETURNING id
         // db.query will automatically convert ? to $1, $2, etc.
-        db.query(sql, [woo_order_id, status, total, customer_name, customer_email, description, ip_address, bank_account_id])
+        db.query(sql, [woo_order_id, status, total, customer_name, customer_email, description, ip_address, bank_account_id, merchant_email])
           .then(result => {
             if (!result || !result.rows || result.rows.length === 0) {
               return reject(new Error('Failed to insert order: No rows returned'));
@@ -54,7 +55,8 @@ class Order {
               customer_email: insertedRow.customer_email,
               description: insertedRow.description,
               ip_address: insertedRow.ip_address,
-              bank_account_id: insertedRow.bank_account_id
+              bank_account_id: insertedRow.bank_account_id,
+              merchant_email: insertedRow.merchant_email
             });
           })
           .catch(err => {
@@ -63,7 +65,7 @@ class Order {
           });
       } else {
         // SQLite - use run with callback
-        db.run(sql, [woo_order_id, status, total, customer_name, customer_email, description, ip_address, bank_account_id], function(err) {
+        db.run(sql, [woo_order_id, status, total, customer_name, customer_email, description, ip_address, bank_account_id, merchant_email], function(err) {
           if (err) {
             reject(err);
           } else {
@@ -77,7 +79,8 @@ class Order {
               customer_email,
               description,
               ip_address,
-              bank_account_id
+              bank_account_id,
+              merchant_email
             });
           }
         });

@@ -176,6 +176,7 @@ router.post('/', async (req, res) => {
     }
 
     // Create new order
+    // Store merchant_email in orders table so cron job can use it directly
     const newOrder = await Order.create({
       woo_order_id: final_woo_order_id,
       status: status || 'pending',
@@ -184,7 +185,8 @@ router.post('/', async (req, res) => {
       customer_email,
       description: description || null,
       ip_address: ip_address || req.ip,
-      bank_account_id: correct_bank_account_id
+      bank_account_id: correct_bank_account_id,
+      merchant_email: email_merchant_email  // Store merchant email in orders table
     });
 
     // Log successful order creation
