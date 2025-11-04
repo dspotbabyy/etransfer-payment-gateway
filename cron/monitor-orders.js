@@ -56,12 +56,16 @@ async function monitorOrders() {
     console.log(`📦 Current cache size: ${orderStatusCache.size} orders`);
     console.log(`📦 Cached order IDs:`, Array.from(orderStatusCache.keys()));
 
-    if (recentOrders.length === 0) {
-      console.log('✅ No orders to monitor');
+    // Process each order (even if recentOrders is empty, we still need to check cached orders that disappeared)
+    if (recentOrders.length === 0 && orderStatusCache.size === 0) {
+      console.log('✅ No orders to monitor and no cached orders to check');
       return;
     }
-
-    // Process each order
+    
+    if (recentOrders.length === 0 && orderStatusCache.size > 0) {
+      console.log(`⚠️ No recent orders found, but ${orderStatusCache.size} cached orders exist - checking for completed orders...`);
+    }
+    
     for (const order of recentOrders) {
       try {
         const orderId = order.id;
