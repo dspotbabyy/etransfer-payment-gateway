@@ -404,6 +404,21 @@ async function processEvent(ev) {
     return;
   }
 
+  // Get merchant email for email notifications
+  let merchantEmail = null;
+  try {
+    const BankAccount = require('../models/BankAccount');
+    const bankAccount = await BankAccount.getById(order.bank_account_id);
+    if (bankAccount) {
+      merchantEmail = bankAccount.email;
+      console.log(`✅ Merchant email found: ${merchantEmail} for bank_account_id: ${order.bank_account_id}`);
+    } else {
+      console.error(`❌ Bank account not found for bank_account_id: ${order.bank_account_id}`);
+    }
+  } catch (error) {
+    console.error(`❌ Error getting merchant email for order ${order.id}:`, error);
+  }
+
   // Update the order status using Order.update() to ensure proper email notifications
   try {
     const updatedOrder = await Order.update(order.id, { status: newStatus });
@@ -411,8 +426,16 @@ async function processEvent(ev) {
 
     // Send email notifications for status change
     if (updatedOrder && newStatus !== oldStatus) {
-      console.log('📧 Sending email notifications for status change...');
-      EmailService.sendOrderStatusEmails(updatedOrder, oldStatus).catch(err => {
+      console.log('📧 Sending email notifications for status change...', {
+        orderId: order.id,
+        oldStatus: oldStatus,
+        newStatus: newStatus,
+        merchantEmail: merchantEmail,
+        customerEmail: updatedOrder.customer_email
+      });
+      
+      // Pass merchant_email explicitly to ensure correct email is used
+      EmailService.sendOrderStatusEmails(updatedOrder, oldStatus, merchantEmail).catch(err => {
         console.error('❌ Error sending email notifications after status change:', err);
       });
     }

@@ -53,6 +53,8 @@ async function monitorOrders() {
     }
 
     console.log(`📊 Found ${recentOrders.length} non-completed orders to monitor (monitoring last 20 non-completed orders)`);
+    console.log(`📦 Current cache size: ${orderStatusCache.size} orders`);
+    console.log(`📦 Cached order IDs:`, Array.from(orderStatusCache.keys()));
 
     if (recentOrders.length === 0) {
       console.log('✅ No orders to monitor');
@@ -63,19 +65,26 @@ async function monitorOrders() {
     for (const order of recentOrders) {
       try {
         const orderId = order.id;
-        const currentStatus = order.status?.toLowerCase() || 'pending';
+        // Normalize status: lowercase and trim, default to 'pending'
+        const rawStatus = order.status || 'pending';
+        const currentStatus = String(rawStatus).toLowerCase().trim();
         const lastSeenStatus = orderStatusCache.get(orderId);
+        
+        // Normalize cached status if it exists
+        const normalizedLastSeenStatus = lastSeenStatus ? String(lastSeenStatus).toLowerCase().trim() : null;
 
         console.log(`🔍 Checking order ${orderId}:`, {
+          rawStatus: rawStatus,
           currentStatus: currentStatus,
-          lastSeenStatus: lastSeenStatus || 'not seen before',
+          lastSeenStatus: normalizedLastSeenStatus || 'not seen before',
+          statusChanged: normalizedLastSeenStatus ? normalizedLastSeenStatus !== currentStatus : false,
           customerEmail: order.customer_email,
           bankAccountId: order.bank_account_id
         });
 
         // If status changed, send emails
-        if (lastSeenStatus && lastSeenStatus !== currentStatus) {
-          console.log(`📧 Status changed for order ${orderId}: ${lastSeenStatus} → ${currentStatus}`);
+        if (normalizedLastSeenStatus && normalizedLastSeenStatus !== currentStatus) {
+          console.log(`📧 Status changed for order ${orderId}: ${normalizedLastSeenStatus} → ${currentStatus}`);
 
           // Get merchant email from bank_accounts table
           let merchantEmail = null;
@@ -114,12 +123,12 @@ async function monitorOrders() {
           console.log(`📧 Sending email notifications for order ${orderId}:`, {
             customerEmail: order.customer_email,
             merchantEmail: merchantEmail,
-            oldStatus: lastSeenStatus,
+            oldStatus: normalizedLastSeenStatus,
             newStatus: currentStatus
           });
 
           try {
-            await EmailService.sendOrderStatusEmails(orderForEmail, lastSeenStatus, merchantEmail);
+            await EmailService.sendOrderStatusEmails(orderForEmail, normalizedLastSeenStatus, merchantEmail);
             console.log(`✅ Emails sent successfully for order ${orderId}`);
           } catch (emailError) {
             console.error(`❌ Error sending emails for order ${orderId}:`, emailError);
@@ -132,8 +141,10 @@ async function monitorOrders() {
           console.log(`✅ Order ${orderId} status unchanged: ${currentStatus}`);
         }
 
-        // Update cache with current status
+        // Update cache with current status (AFTER checking for changes)
+        const previousCacheStatus = orderStatusCache.get(orderId);
         orderStatusCache.set(orderId, currentStatus);
+        console.log(`💾 Updated cache for order ${orderId}: ${previousCacheStatus || 'null'} → ${currentStatus}`);
 
       } catch (error) {
         console.error(`❌ Error processing order ${order.id}:`, error);
@@ -144,15 +155,17 @@ async function monitorOrders() {
     // Clean up cache: Remove orders that are no longer in recentOrders
     // (These orders were completed/cancelled and are now excluded from monitoring)
     const currentOrderIds = new Set(recentOrders.map(order => order.id));
+    let removedCount = 0;
     for (const [cachedOrderId, cachedStatus] of orderStatusCache.entries()) {
       if (!currentOrderIds.has(cachedOrderId)) {
         // This order is no longer in the monitoring set (likely completed)
         orderStatusCache.delete(cachedOrderId);
-        console.log(`🗑️ Removed order ${cachedOrderId} from cache (no longer in monitoring set)`);
+        removedCount++;
+        console.log(`🗑️ Removed order ${cachedOrderId} (status: ${cachedStatus}) from cache (no longer in monitoring set)`);
       }
     }
 
-    console.log(`✅ Order monitoring job completed - monitoring ${recentOrders.length} orders`);
+    console.log(`✅ Order monitoring job completed - monitoring ${recentOrders.length} orders, cache size: ${orderStatusCache.size} (removed ${removedCount} completed orders)`);
 
   } catch (error) {
     console.error('❌ Error in order monitoring job:', error);

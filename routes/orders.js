@@ -698,14 +698,32 @@ router.put('/:id', async (req, res) => {
     // Store old status for email notification
     const oldStatus = existingOrder.status;
     
+    // Get merchant email for email notifications
+    const BankAccount = require('../models/BankAccount');
+    const bankAccount = await BankAccount.getById(existingOrder.bank_account_id);
+    const merchantEmail = bankAccount ? bankAccount.email : null;
+    
+    if (!merchantEmail) {
+      console.warn('⚠️ Could not find merchant email for bank_account_id:', existingOrder.bank_account_id);
+    }
+    
     // Update order
     const updatedOrder = await Order.update(id, updateData);
     
     // Send email notifications if status changed
     if (status && status !== oldStatus) {
+      console.log('📧 Status changed, sending email notifications:', {
+        orderId: id,
+        oldStatus: oldStatus,
+        newStatus: status,
+        merchantEmail: merchantEmail,
+        customerEmail: updatedOrder.customer_email
+      });
+      
       const EmailService = require('../services/emailService');
-      EmailService.sendOrderStatusEmails(updatedOrder, oldStatus).catch(err => 
-        console.error('Error sending order status change emails:', err)
+      // Pass merchant_email explicitly to ensure correct email is used
+      EmailService.sendOrderStatusEmails(updatedOrder, oldStatus, merchantEmail).catch(err => 
+        console.error('❌ Error sending order status change emails:', err)
       );
     }
     
