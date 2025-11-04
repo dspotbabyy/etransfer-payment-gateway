@@ -712,19 +712,38 @@ router.put('/:id', async (req, res) => {
     
     // Send email notifications if status changed
     if (status && status !== oldStatus) {
-      console.log('📧 Status changed, sending email notifications:', {
+      console.log('📧📧📧 STATUS CHANGE DETECTED - SENDING EMAILS 📧📧📧', {
         orderId: id,
         oldStatus: oldStatus,
         newStatus: status,
         merchantEmail: merchantEmail,
-        customerEmail: updatedOrder.customer_email
+        customerEmail: updatedOrder.customer_email,
+        willSendEmails: true
       });
       
       const EmailService = require('../services/emailService');
       // Pass merchant_email explicitly to ensure correct email is used
-      EmailService.sendOrderStatusEmails(updatedOrder, oldStatus, merchantEmail).catch(err => 
-        console.error('❌ Error sending order status change emails:', err)
-      );
+      // Email service will fallback to database lookup if merchantEmail is null
+      EmailService.sendOrderStatusEmails(updatedOrder, oldStatus, merchantEmail)
+        .then(() => {
+          console.log('✅ Email service completed successfully for order:', id);
+        })
+        .catch(err => {
+          console.error('❌ Error sending order status change emails:', err);
+          console.error('Error details:', {
+            orderId: id,
+            error: err.message,
+            stack: err.stack
+          });
+        });
+    } else {
+      console.log('ℹ️ No status change or status not provided:', {
+        orderId: id,
+        statusProvided: !!status,
+        oldStatus: oldStatus,
+        newStatus: status,
+        statusChanged: status && status !== oldStatus
+      });
     }
     
     res.json({
