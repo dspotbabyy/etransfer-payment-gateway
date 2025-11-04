@@ -233,9 +233,15 @@ setInterval(async () => {
   } catch (error) {
     console.error('Order validation cron job error:', error);
   }
-}, 1 * 60 * 1000); // 5 minutes
+}, 1 * 60 * 1000); // 1 minute
 
 console.log('🕐 Order validation cron job scheduled to run every 1 minute');
+
+// Schedule order monitoring cron job (monitors status changes and sends emails)
+const { scheduleOrderMonitoring } = require('./cron/monitor-orders');
+
+// Initialize order monitoring (runs every 5 minutes)
+scheduleOrderMonitoring();
 
 // Error handling middleware - ensure CORS headers are sent even on errors
 app.use((err, req, res, next) => {
