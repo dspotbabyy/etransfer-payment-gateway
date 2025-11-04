@@ -105,7 +105,8 @@ if (isProduction && DATABASE_URL) {
             lastID: result.insertId || result.rows[0]?.id,
             changes: result.rowCount || 0
           };
-          callback(null, mockThis);
+          // Use .call() to set 'this' in the callback (for SQLite compatibility)
+          callback.call(mockThis, null);
         }
       });
     }

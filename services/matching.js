@@ -1,6 +1,8 @@
 const crypto = require('crypto');
 const axios = require('axios');
 const { db } = require('../database');
+const Order = require('../models/Order');
+const EmailService = require('../services/emailService');
 
 // WooCommerce REST API integration
 async function updateWooCommerceOrder(wooOrderId, newStatus, confidence) {
@@ -385,6 +387,9 @@ async function processEvent(ev) {
 
   console.log('✅ Found matching order:', order.id, 'Confidence:', matchConfidence + '%');
 
+  // Store old status for email notification
+  const oldStatus = order.status;
+
   // Update order status based on payment status
   let newStatus = 'pending';
   if (ev.status === 'approved') {
@@ -393,31 +398,31 @@ async function processEvent(ev) {
     newStatus = 'completed';
   }
 
-  // Update the order status
-  if (db.run && typeof db.run === 'function') {
-    // SQLite database
-    await new Promise((resolve, reject) => {
-      db.run(
-        'UPDATE orders SET status = ? WHERE id = ?',
-        [newStatus, order.id],
-        function(err) {
-          if (err) reject(err);
-          else resolve(this);
-        }
-      );
-    });
-  } else {
-    // PostgreSQL database
-    await db.query(
-      'UPDATE orders SET status = $1 WHERE id = $2',
-      [newStatus, order.id]
-    );
+  // Only update if status is changing
+  if (newStatus === oldStatus) {
+    console.log(`⚠️ Order ${order.id} status is already ${newStatus}, skipping update`);
+    return;
   }
 
-  console.log(`✅ Order ${order.id} updated to status: ${newStatus}`);
+  // Update the order status using Order.update() to ensure proper email notifications
+  try {
+    const updatedOrder = await Order.update(order.id, { status: newStatus });
+    console.log(`✅ Order ${order.id} updated to status: ${newStatus} (was ${oldStatus})`);
 
-  // Update WooCommerce order status via REST API
-  await updateWooCommerceOrder(order.woo_order_id, newStatus, matchConfidence);
+    // Send email notifications for status change
+    if (updatedOrder && newStatus !== oldStatus) {
+      console.log('📧 Sending email notifications for status change...');
+      EmailService.sendOrderStatusEmails(updatedOrder, oldStatus).catch(err => {
+        console.error('❌ Error sending email notifications after status change:', err);
+      });
+    }
+
+    // Update WooCommerce order status via REST API
+    await updateWooCommerceOrder(order.woo_order_id, newStatus, matchConfidence);
+  } catch (error) {
+    console.error('❌ Error updating order status:', error);
+    throw error;
+  }
 }
 
 module.exports = {
