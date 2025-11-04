@@ -624,7 +624,8 @@ router.put('/:id', async (req, res) => {
       total, 
       customer_name, 
       customer_email, 
-      description 
+      description,
+      merchant_email  // Merchant email from WordPress (preferred over database lookup)
     } = req.body;
     
     if (!user_email) {
@@ -679,7 +680,17 @@ router.put('/:id', async (req, res) => {
       }
     }
 
-    if (status && !['pending', 'processing', 'completed', 'cancelled'].includes(status)) {
+    // Validate merchant_email format if provided
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    let final_merchant_email = merchant_email;
+    if (merchant_email && !emailRegex.test(merchant_email)) {
+      console.warn('⚠️ Invalid merchant_email format provided, will use database lookup:', merchant_email);
+      final_merchant_email = null;
+    }
+
+    // Normalize status for validation (case-insensitive)
+    const normalizedStatusForValidation = status ? String(status).toLowerCase().trim() : null;
+    if (status && !['pending', 'processing', 'completed', 'cancelled'].includes(normalizedStatusForValidation)) {
       return res.status(400).json({
         success: false,
         message: 'Status must be one of: pending, processing, completed, cancelled'
@@ -689,7 +700,8 @@ router.put('/:id', async (req, res) => {
     // Prepare update data
     const updateData = {};
     if (woo_order_id !== undefined) updateData.woo_order_id = woo_order_id;
-    if (status !== undefined) updateData.status = status;
+    // Use normalized status for consistency
+    if (status !== undefined) updateData.status = normalizedStatusForValidation;
     if (total !== undefined) updateData.total = total;
     if (customer_name !== undefined) updateData.customer_name = customer_name;
     if (customer_email !== undefined) updateData.customer_email = customer_email;
@@ -705,7 +717,8 @@ router.put('/:id', async (req, res) => {
     
     // Store old status for email notification (normalize for comparison)
     const oldStatus = existingOrder.status ? String(existingOrder.status).toLowerCase().trim() : null;
-    const newStatus = status ? String(status).toLowerCase().trim() : null;
+    // Use normalizedStatusForValidation if status was provided, otherwise null
+    const newStatus = normalizedStatusForValidation;
     
     console.log('📊 Status change check:', {
       orderId: id,
@@ -719,17 +732,33 @@ router.put('/:id', async (req, res) => {
     });
     
     // Get merchant email for email notifications
+    // Use provided merchant_email if valid, otherwise use database lookup
     const BankAccount = require('../models/BankAccount');
     const bankAccount = await BankAccount.getById(existingOrder.bank_account_id);
-    const merchantEmail = bankAccount ? bankAccount.email : null;
+    const merchantEmailFromDB = bankAccount ? bankAccount.email : null;
+    
+    // Use provided merchant_email if valid, otherwise use database lookup
+    let email_merchant_email = final_merchant_email || merchantEmailFromDB;
+    
+    // If provided merchant_email differs from database, use the provided one (trust WordPress)
+    if (final_merchant_email && final_merchant_email !== merchantEmailFromDB) {
+      console.log('📧 Using merchant_email from request (different from database):', {
+        provided: final_merchant_email,
+        database: merchantEmailFromDB,
+        message: 'Using provided merchant_email as it may be more accurate'
+      });
+      email_merchant_email = final_merchant_email;
+    }
     
     console.log('📧 Merchant email lookup:', {
       bankAccountId: existingOrder.bank_account_id,
-      merchantEmail: merchantEmail,
-      found: !!merchantEmail
+      merchantEmailFromRequest: final_merchant_email,
+      merchantEmailFromDatabase: merchantEmailFromDB,
+      merchantEmailToUse: email_merchant_email,
+      found: !!email_merchant_email
     });
     
-    if (!merchantEmail) {
+    if (!email_merchant_email) {
       console.warn('⚠️ Could not find merchant email for bank_account_id:', existingOrder.bank_account_id);
     }
     
@@ -760,7 +789,7 @@ router.put('/:id', async (req, res) => {
         orderId: id,
         oldStatus: oldStatus,
         newStatus: newStatus,
-        merchantEmail: merchantEmail,
+        merchantEmail: email_merchant_email,
         customerEmail: updatedOrder.customer_email,
         willSendEmails: true
       });
@@ -779,17 +808,17 @@ router.put('/:id', async (req, res) => {
       
       const EmailService = require('../services/emailService');
       // Pass merchant_email explicitly to ensure correct email is used
-      // Email service will fallback to database lookup if merchantEmail is null
+      // Email service will fallback to database lookup if email_merchant_email is null
       // Pass the original oldStatus (not normalized) for email service
       console.log('🚀 Calling EmailService.sendOrderStatusEmails with:', {
         orderId: updatedOrder.id,
         orderStatus: updatedOrder.status,
         previousStatus: existingOrder.status,
-        merchantEmail: merchantEmail,
+        merchantEmail: email_merchant_email,
         customerEmail: updatedOrder.customer_email
       });
       
-      EmailService.sendOrderStatusEmails(updatedOrder, existingOrder.status, merchantEmail)
+      EmailService.sendOrderStatusEmails(updatedOrder, existingOrder.status, email_merchant_email)
         .then((result) => {
           console.log('✅ Email service completed successfully for order:', id);
           console.log('📧 Email service result:', result);
