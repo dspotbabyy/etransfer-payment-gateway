@@ -18,11 +18,19 @@ class EmailService {
       const bankAccount = await BankAccount.getById(bankAccountId);
       
       if (bankAccount) {
-        console.log('✅ Merchant email retrieved:', {
+        console.log('✅ Merchant email retrieved from database:', {
           bankAccountId: bankAccountId,
           merchantEmail: bankAccount.email,
-          merchantName: bankAccount.username || bankAccount.email
+          merchantName: bankAccount.username || bankAccount.email,
+          databaseSource: 'bank_accounts table'
         });
+        
+        // Validate that we got a valid email
+        if (!bankAccount.email || typeof bankAccount.email !== 'string') {
+          console.error('❌ Invalid merchant email from database:', bankAccount.email);
+          return null;
+        }
+        
         return bankAccount.email;
       } else {
         console.error('❌ Bank account not found for ID:', bankAccountId);
@@ -166,20 +174,34 @@ class EmailService {
 
       const fromEmail = process.env.EMAIL_FROM || 'noreply@dexxpay.com';
       
+      // CRITICAL: Verify merchantEmail is NOT customer_email
+      if (merchantEmail === order.customer_email) {
+        console.error('❌ CRITICAL: sendNewOrderEmail - merchantEmail matches customer_email!', {
+          merchantEmail: merchantEmail,
+          customerEmail: order.customer_email,
+          action: 'This email will be sent to the WRONG recipient!'
+        });
+      }
+      
       console.log('📧 Sending New Order email to merchant:', {
         from: fromEmail,
         to: merchantEmail,
-        orderId: order.id || order.woo_order_id
+        orderId: order.id || order.woo_order_id,
+        customerEmail: order.customer_email,
+        verification: merchantEmail === order.customer_email ? '❌ WRONG - Same as customer!' : '✅ Correct - Different from customer'
       });
 
       const response = await resend.emails.send({
         from: fromEmail,
-        to: merchantEmail,
+        to: merchantEmail,  // This MUST be merchant email, NOT customer email
         subject: subject,
         html: html
       });
 
-      console.log('✅ New Order email sent to merchant:', merchantEmail, response);
+      console.log('✅ New Order email sent to merchant:', {
+        to: merchantEmail,
+        response: response
+      });
       return response;
     } catch (error) {
       console.error('❌ Error sending New Order email:', error);
@@ -305,15 +327,26 @@ class EmailService {
 
       const fromEmail = process.env.EMAIL_FROM || 'noreply@dexxpay.com';
       
+      // CRITICAL: Verify merchantEmail is NOT customer_email
+      if (merchantEmail === order.customer_email) {
+        console.error('❌ CRITICAL: sendProcessingNotificationToMerchant - merchantEmail matches customer_email!', {
+          merchantEmail: merchantEmail,
+          customerEmail: order.customer_email,
+          action: 'This email will be sent to the WRONG recipient!'
+        });
+      }
+      
       console.log('📧 Sending Processing notification to merchant:', {
         from: fromEmail,
         to: merchantEmail,
-        orderId: order.id || order.woo_order_id
+        orderId: order.id || order.woo_order_id,
+        customerEmail: order.customer_email,
+        verification: merchantEmail === order.customer_email ? '❌ WRONG - Same as customer!' : '✅ Correct - Different from customer'
       });
 
       const response = await resend.emails.send({
         from: fromEmail,
-        to: merchantEmail,
+        to: merchantEmail,  // This MUST be merchant email, NOT customer email
         subject: subject,
         html: html
       });
@@ -445,15 +478,26 @@ class EmailService {
 
       const fromEmail = process.env.EMAIL_FROM || 'noreply@dexxpay.com';
       
+      // CRITICAL: Verify merchantEmail is NOT customer_email
+      if (merchantEmail === order.customer_email) {
+        console.error('❌ CRITICAL: sendCompletedNotificationToMerchant - merchantEmail matches customer_email!', {
+          merchantEmail: merchantEmail,
+          customerEmail: order.customer_email,
+          action: 'This email will be sent to the WRONG recipient!'
+        });
+      }
+      
       console.log('📧 Sending Completed notification to merchant:', {
         from: fromEmail,
         to: merchantEmail,
-        orderId: order.id || order.woo_order_id
+        orderId: order.id || order.woo_order_id,
+        customerEmail: order.customer_email,
+        verification: merchantEmail === order.customer_email ? '❌ WRONG - Same as customer!' : '✅ Correct - Different from customer'
       });
 
       const response = await resend.emails.send({
         from: fromEmail,
-        to: merchantEmail,
+        to: merchantEmail,  // This MUST be merchant email, NOT customer email
         subject: subject,
         html: html
       });
@@ -487,9 +531,22 @@ class EmailService {
         return;
       }
 
+      // CRITICAL: Ensure merchantEmail is NOT the same as customer_email
+      if (merchantEmail === order.customer_email) {
+        console.error('❌ CRITICAL ERROR: Merchant email matches customer email!', {
+          merchantEmail: merchantEmail,
+          customerEmail: order.customer_email,
+          bankAccountId: order.bank_account_id,
+          message: 'This should NEVER happen - merchant and customer emails must be different'
+        });
+        // Don't return - we'll still try to send, but log the error
+      }
+
       console.log('✅ Email addresses verified:', {
         customerEmail: order.customer_email,
-        merchantEmail: merchantEmail
+        merchantEmail: merchantEmail,
+        bankAccountId: order.bank_account_id,
+        emailsMatch: merchantEmail === order.customer_email ? '⚠️ WARNING: MATCH!' : '✅ Different'
       });
 
       // Send emails based on current status
