@@ -498,38 +498,114 @@ class EmailService {
         case 'on-hold':
         case 'onhold':
           // Send On Hold email to customer and New Order email to merchant
-          await Promise.all([
-            this.sendOnHoldEmail(order, merchantEmail).catch(err => 
-              console.error('Failed to send On Hold email:', err)
-            ),
-            this.sendNewOrderEmail(order, merchantEmail).catch(err => 
-              console.error('Failed to send New Order email:', err)
-            )
+          console.log('📧 Sending emails for pending/on-hold status...');
+          console.log('📧 Will send to customer:', order.customer_email);
+          console.log('📧 Will send to merchant:', merchantEmail);
+          
+          // Send both emails independently to ensure both are attempted
+          const customerEmailPromise = this.sendOnHoldEmail(order, merchantEmail)
+            .then(result => {
+              console.log('✅ Customer email sent successfully');
+              return result;
+            })
+            .catch(err => {
+              console.error('❌ Failed to send On Hold email to customer:', err);
+              return { error: err };
+            });
+          
+          const merchantEmailPromise = this.sendNewOrderEmail(order, merchantEmail)
+            .then(result => {
+              console.log('✅ Merchant email sent successfully');
+              return result;
+            })
+            .catch(err => {
+              console.error('❌ Failed to send New Order email to merchant:', err);
+              return { error: err };
+            });
+          
+          const pendingEmails = await Promise.allSettled([
+            customerEmailPromise,
+            merchantEmailPromise
           ]);
+          
+          console.log('📧 Email results for pending/on-hold:', {
+            customerEmail: pendingEmails[0].status === 'fulfilled' ? '✅ Sent' : '❌ Failed',
+            merchantEmail: pendingEmails[1].status === 'fulfilled' ? '✅ Sent' : '❌ Failed'
+          });
           break;
 
         case 'processing':
           // Send Processing email to customer and notification to merchant
-          await Promise.all([
-            this.sendProcessingEmail(order, merchantEmail).catch(err => 
-              console.error('Failed to send Processing email:', err)
-            ),
-            this.sendProcessingNotificationToMerchant(order, merchantEmail).catch(err => 
-              console.error('Failed to send Processing notification:', err)
-            )
+          console.log('📧 Sending emails for processing status...');
+          console.log('📧 Will send to customer:', order.customer_email);
+          console.log('📧 Will send to merchant:', merchantEmail);
+          
+          const customerProcessingPromise = this.sendProcessingEmail(order, merchantEmail)
+            .then(result => {
+              console.log('✅ Customer processing email sent successfully');
+              return result;
+            })
+            .catch(err => {
+              console.error('❌ Failed to send Processing email to customer:', err);
+              return { error: err };
+            });
+          
+          const merchantProcessingPromise = this.sendProcessingNotificationToMerchant(order, merchantEmail)
+            .then(result => {
+              console.log('✅ Merchant processing notification sent successfully');
+              return result;
+            })
+            .catch(err => {
+              console.error('❌ Failed to send Processing notification to merchant:', err);
+              return { error: err };
+            });
+          
+          const processingEmails = await Promise.allSettled([
+            customerProcessingPromise,
+            merchantProcessingPromise
           ]);
+          
+          console.log('📧 Email results for processing:', {
+            customerEmail: processingEmails[0].status === 'fulfilled' ? '✅ Sent' : '❌ Failed',
+            merchantEmail: processingEmails[1].status === 'fulfilled' ? '✅ Sent' : '❌ Failed'
+          });
           break;
 
         case 'completed':
           // Send Completed email to customer and notification to merchant
-          await Promise.all([
-            this.sendCompletedEmail(order, merchantEmail).catch(err => 
-              console.error('Failed to send Completed email:', err)
-            ),
-            this.sendCompletedNotificationToMerchant(order, merchantEmail).catch(err => 
-              console.error('Failed to send Completed notification:', err)
-            )
+          console.log('📧 Sending emails for completed status...');
+          console.log('📧 Will send to customer:', order.customer_email);
+          console.log('📧 Will send to merchant:', merchantEmail);
+          
+          const customerCompletedPromise = this.sendCompletedEmail(order, merchantEmail)
+            .then(result => {
+              console.log('✅ Customer completed email sent successfully');
+              return result;
+            })
+            .catch(err => {
+              console.error('❌ Failed to send Completed email to customer:', err);
+              return { error: err };
+            });
+          
+          const merchantCompletedPromise = this.sendCompletedNotificationToMerchant(order, merchantEmail)
+            .then(result => {
+              console.log('✅ Merchant completed notification sent successfully');
+              return result;
+            })
+            .catch(err => {
+              console.error('❌ Failed to send Completed notification to merchant:', err);
+              return { error: err };
+            });
+          
+          const completedEmails = await Promise.allSettled([
+            customerCompletedPromise,
+            merchantCompletedPromise
           ]);
+          
+          console.log('📧 Email results for completed:', {
+            customerEmail: completedEmails[0].status === 'fulfilled' ? '✅ Sent' : '❌ Failed',
+            merchantEmail: completedEmails[1].status === 'fulfilled' ? '✅ Sent' : '❌ Failed'
+          });
           break;
 
         default:
