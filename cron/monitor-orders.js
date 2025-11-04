@@ -320,24 +320,25 @@ async function monitorOrders() {
 
 /**
  * Schedule the order monitoring job
- * Runs every 5 minutes to check for status changes
+ * Runs every 15 seconds to check for status changes
  */
 const scheduleOrderMonitoring = () => {
-  // Run immediately on startup (after 10 seconds to let server initialize)
+  // Run immediately on startup (after 5 seconds to let server initialize)
   setTimeout(() => {
-    console.log('🚀 Initial order monitoring check (10s delay)...');
+    console.log('🚀 Initial order monitoring check (5s delay)...');
     monitorOrders();
-  }, 10000);
+  }, 5000);
 
-  // Schedule to run every 5 minutes
-  cron.schedule('*/5 * * * *', async () => {
+  // Schedule to run every 15 seconds
+  // Format: second minute hour day month weekday (6 fields for seconds support)
+  cron.schedule('*/15 * * * * *', async () => {
     await monitorOrders();
   }, {
     scheduled: true,
     timezone: 'UTC'
   });
 
-  console.log('✅ Order monitoring scheduler initialized - monitoring last 5 non-completed orders, runs every 5 minutes');
+  console.log('✅ Order monitoring scheduler initialized - monitoring last 5 non-completed orders, runs every 15 seconds');
 };
 
 module.exports = {
