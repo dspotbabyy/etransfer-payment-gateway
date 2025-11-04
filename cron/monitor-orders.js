@@ -9,7 +9,7 @@ const BankAccount = require('../models/BankAccount');
 const orderStatusCache = new Map();
 
 /**
- * Monitor last 20 non-completed orders for status changes
+ * Monitor last 5 non-completed orders for status changes
  * Send emails when status changes
  * Completed orders are automatically excluded from monitoring
  */
@@ -20,8 +20,8 @@ async function monitorOrders() {
     // Detect database type
     const isPostgreSQL = !db.run || typeof db.run !== 'function';
     
-    // Get last 20 non-completed orders
-    // Completed orders are automatically excluded, so we always monitor the most recent 20 non-completed orders
+    // Get last 5 non-completed orders
+    // Completed orders are automatically excluded, so we always monitor the most recent 5 non-completed orders
     let recentOrders = [];
     
     if (isPostgreSQL) {
@@ -31,7 +31,7 @@ async function monitorOrders() {
          FROM orders
          WHERE status NOT IN ('completed', 'cancelled')
          ORDER BY id DESC
-         LIMIT 20`
+         LIMIT 5`
       );
       recentOrders = result.rows || [];
     } else {
@@ -42,7 +42,7 @@ async function monitorOrders() {
            FROM orders
            WHERE status NOT IN ('completed', 'cancelled')
            ORDER BY id DESC
-           LIMIT 20`,
+           LIMIT 5`,
           [],
           (err, rows) => {
             if (err) reject(err);
@@ -52,7 +52,7 @@ async function monitorOrders() {
       });
     }
 
-    console.log(`📊 Found ${recentOrders.length} non-completed orders to monitor (monitoring last 20 non-completed orders)`);
+    console.log(`📊 Found ${recentOrders.length} non-completed orders to monitor (monitoring last 5 non-completed orders)`);
     console.log(`📦 Current cache size: ${orderStatusCache.size} orders`);
     console.log(`📦 Cached order IDs:`, Array.from(orderStatusCache.keys()));
 
@@ -152,20 +152,152 @@ async function monitorOrders() {
       }
     }
 
-    // Clean up cache: Remove orders that are no longer in recentOrders
-    // (These orders were completed/cancelled and are now excluded from monitoring)
+    // Check for orders that were being monitored but are now completed
+    // These orders disappeared from the query results because they're now completed
+    // FLOW: 
+    // 1. Order was in cache with status "pending" (one of last 5 non-completed)
+    // 2. Order status changed to "completed" (via API or other means)
+    // 3. Next cron run: Order is no longer in query results (excluded by WHERE status NOT IN ('completed', 'cancelled'))
+    // 4. We detect it disappeared from results, query database for current status
+    // 5. If status is "completed" and was previously non-completed → send email
     const currentOrderIds = new Set(recentOrders.map(order => order.id));
-    let removedCount = 0;
+    const cachedOrdersToCheck = [];
+    
     for (const [cachedOrderId, cachedStatus] of orderStatusCache.entries()) {
       if (!currentOrderIds.has(cachedOrderId)) {
-        // This order is no longer in the monitoring set (likely completed)
-        orderStatusCache.delete(cachedOrderId);
-        removedCount++;
-        console.log(`🗑️ Removed order ${cachedOrderId} (status: ${cachedStatus}) from cache (no longer in monitoring set)`);
+        // This order is no longer in the monitoring set (might be completed)
+        // Store it to check if it transitioned to "completed"
+        cachedOrdersToCheck.push({ id: cachedOrderId, lastSeenStatus: cachedStatus });
+      }
+    }
+    
+    // Check cached orders that disappeared from the query results
+    if (cachedOrdersToCheck.length > 0) {
+      console.log(`🔍 Checking ${cachedOrdersToCheck.length} cached orders that disappeared from query results...`);
+      
+      for (const cachedOrder of cachedOrdersToCheck) {
+        try {
+          // Get current order status from database
+          let currentOrder = null;
+          
+          if (isPostgreSQL) {
+            const result = await db.query(
+              `SELECT id, woo_order_id, status, customer_email, customer_name, total, bank_account_id, description
+               FROM orders
+               WHERE id = $1`,
+              [cachedOrder.id]
+            );
+            currentOrder = result.rows && result.rows.length > 0 ? result.rows[0] : null;
+          } else {
+            currentOrder = await new Promise((resolve, reject) => {
+              db.get(
+                `SELECT id, woo_order_id, status, customer_email, customer_name, total, bank_account_id, description
+                 FROM orders
+                 WHERE id = ?`,
+                [cachedOrder.id],
+                (err, row) => {
+                  if (err) reject(err);
+                  else resolve(row || null);
+                }
+              );
+            });
+          }
+          
+          if (currentOrder) {
+            const normalizedCachedStatus = cachedOrder.lastSeenStatus ? String(cachedOrder.lastSeenStatus).toLowerCase().trim() : null;
+            const currentStatus = currentOrder.status ? String(currentOrder.status).toLowerCase().trim() : null;
+            
+            // If order transitioned to "completed", send email
+            if (normalizedCachedStatus && 
+                normalizedCachedStatus !== 'completed' && 
+                normalizedCachedStatus !== 'cancelled' &&
+                currentStatus === 'completed') {
+              
+              console.log(`📧 Order ${cachedOrder.id} transitioned to completed: ${normalizedCachedStatus} → ${currentStatus}`);
+              
+              // Get merchant email
+              let merchantEmail = null;
+              try {
+                const bankAccount = await BankAccount.getById(currentOrder.bank_account_id);
+                if (bankAccount) {
+                  merchantEmail = bankAccount.email;
+                  console.log(`✅ Merchant email found: ${merchantEmail} for bank_account_id: ${currentOrder.bank_account_id}`);
+                }
+              } catch (error) {
+                console.error(`❌ Error getting merchant email for order ${cachedOrder.id}:`, error);
+              }
+              
+              if (merchantEmail) {
+                // Prepare order object for email service
+                const orderForEmail = {
+                  id: currentOrder.id,
+                  woo_order_id: currentOrder.woo_order_id,
+                  status: currentStatus,
+                  customer_email: currentOrder.customer_email,
+                  customer_name: currentOrder.customer_name,
+                  total: currentOrder.total,
+                  bank_account_id: currentOrder.bank_account_id,
+                  description: currentOrder.description
+                };
+                
+                // Send "completed" email notifications
+                console.log(`📧 Sending completed email notifications for order ${cachedOrder.id}:`, {
+                  customerEmail: currentOrder.customer_email,
+                  merchantEmail: merchantEmail,
+                  oldStatus: normalizedCachedStatus,
+                  newStatus: currentStatus
+                });
+                
+                try {
+                  await EmailService.sendOrderStatusEmails(orderForEmail, normalizedCachedStatus, merchantEmail);
+                  console.log(`✅ Completed emails sent successfully for order ${cachedOrder.id}`);
+                } catch (emailError) {
+                  console.error(`❌ Error sending completed emails for order ${cachedOrder.id}:`, emailError);
+                  console.error(`❌ Email error details:`, emailError.message, emailError.stack);
+                }
+              } else {
+                console.warn(`⚠️ Skipping completed email for order ${cachedOrder.id} - merchant email not found`);
+              }
+            } else {
+              // Order status is not "completed" - log why we're not sending email
+              console.log(`ℹ️ Order ${cachedOrder.id} status check:`, {
+                cachedStatus: normalizedCachedStatus,
+                currentStatus: currentStatus,
+                willSendEmail: false,
+                reason: normalizedCachedStatus === 'completed' || normalizedCachedStatus === 'cancelled' 
+                  ? 'Order was already completed/cancelled in cache'
+                  : currentStatus !== 'completed' 
+                    ? `Order is not completed (current status: ${currentStatus})`
+                    : 'No cached status to compare'
+              });
+            }
+            
+            // Remove from cache only if order is completed or cancelled
+            // (Orders that dropped from top 5 but are still non-completed will be removed)
+            // This is fine because we only monitor the last 5 orders
+            if (currentStatus === 'completed' || currentStatus === 'cancelled') {
+              orderStatusCache.delete(cachedOrder.id);
+              console.log(`🗑️ Removed order ${cachedOrder.id} from cache (status: ${currentStatus})`);
+            } else {
+              // Order is still non-completed but dropped from top 5 - remove from cache
+              // (We only monitor the last 5 orders, so older orders don't need monitoring)
+              orderStatusCache.delete(cachedOrder.id);
+              console.log(`🗑️ Removed order ${cachedOrder.id} from cache (dropped from top 5, status: ${currentStatus})`);
+            }
+          } else {
+            // Order not found in database (might have been deleted)
+            orderStatusCache.delete(cachedOrder.id);
+            console.log(`🗑️ Removed order ${cachedOrder.id} from cache (order not found in database)`);
+          }
+        } catch (error) {
+          console.error(`❌ Error checking cached order ${cachedOrder.id}:`, error);
+          // Remove from cache on error to prevent infinite retries
+          orderStatusCache.delete(cachedOrder.id);
+        }
       }
     }
 
-    console.log(`✅ Order monitoring job completed - monitoring ${recentOrders.length} orders, cache size: ${orderStatusCache.size} (removed ${removedCount} completed orders)`);
+    console.log(`✅ Order monitoring job completed - monitoring ${recentOrders.length} orders, cache size: ${orderStatusCache.size}`);
 
   } catch (error) {
     console.error('❌ Error in order monitoring job:', error);
@@ -191,7 +323,7 @@ const scheduleOrderMonitoring = () => {
     timezone: 'UTC'
   });
 
-  console.log('✅ Order monitoring scheduler initialized - monitoring last 20 non-completed orders, runs every 5 minutes');
+  console.log('✅ Order monitoring scheduler initialized - monitoring last 5 non-completed orders, runs every 5 minutes');
 };
 
 module.exports = {

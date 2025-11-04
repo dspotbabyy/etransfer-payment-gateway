@@ -237,7 +237,9 @@ setInterval(async () => {
 
 console.log('🕐 Order validation cron job scheduled to run every 1 minute');
 
-// Order monitoring cron job removed - emails now sent directly from API endpoints when status changes
+// Schedule order monitoring cron job (monitors last 5 orders for status changes)
+const { scheduleOrderMonitoring } = require('./cron/monitor-orders');
+scheduleOrderMonitoring();
 
 // Error handling middleware - ensure CORS headers are sent even on errors
 app.use((err, req, res, next) => {
