@@ -58,7 +58,8 @@ router.post('/', async (req, res) => {
       customer_email, 
       description, 
       ip_address,
-      bank_account_id
+      bank_account_id,
+      merchant_email  // Merchant email from WordPress (preferred over database lookup)
     } = req.body;
     
     // Map woocommerce_order_id to woo_order_id if provided
@@ -86,6 +87,13 @@ router.post('/', async (req, res) => {
         success: false,
         message: 'Invalid customer email format'
       });
+    }
+
+    // Validate merchant_email format if provided
+    let final_merchant_email = merchant_email;
+    if (merchant_email && !emailRegex.test(merchant_email)) {
+      console.warn('⚠️ Invalid merchant_email format provided, will use database lookup:', merchant_email);
+      final_merchant_email = null;
     }
 
     // Validate bank_account_id exists
@@ -117,17 +125,33 @@ router.post('/', async (req, res) => {
       console.log(`   Note: customer_email (${customer_email}) should be customer's email, not merchant's`);
     }
     
+    // Use provided merchant_email if valid, otherwise use database lookup
+    let email_merchant_email = final_merchant_email || bankAccount.email;
+    
+    // If provided merchant_email differs from database, use the provided one (trust WordPress)
+    if (final_merchant_email && final_merchant_email !== bankAccount.email) {
+      console.log('📧 Using merchant_email from request (different from database):', {
+        provided: final_merchant_email,
+        database: bankAccount.email,
+        message: 'Using provided merchant_email as it may be more accurate'
+      });
+      email_merchant_email = final_merchant_email;
+    }
+    
     // Log for verification
     console.log('📝 Order creation:', {
       customer_email: customer_email,  // Customer's email (saved in order)
-      merchant_email: bankAccount.email,  // Merchant's email (only for notifications)
+      merchant_email_from_request: final_merchant_email,
+      merchant_email_from_database: bankAccount.email,
+      merchant_email_to_use: email_merchant_email,  // Merchant's email (for email notifications)
       bank_account_id: correct_bank_account_id
     });
     
     // Warning if customer_email matches merchant email (shouldn't happen)
-    if (customer_email === bankAccount.email) {
+    if (customer_email === email_merchant_email) {
       console.warn('⚠️ WARNING: customer_email matches merchant email!', {
-        email: customer_email,
+        customerEmail: customer_email,
+        merchantEmail: email_merchant_email,
         message: 'This might indicate customer_email is incorrectly set to merchant email'
       });
     }
@@ -167,8 +191,9 @@ router.post('/', async (req, res) => {
     console.log(`Order created successfully: ID ${newOrder.id}, Bank Account ID: ${correct_bank_account_id}, Customer: ${customer_email}`);
 
     // Send email notifications (async, don't wait)
+    // Pass merchant_email explicitly to ensure correct email is used
     const EmailService = require('../services/emailService');
-    EmailService.sendOrderStatusEmails(newOrder).catch(err => 
+    EmailService.sendOrderStatusEmails(newOrder, null, email_merchant_email).catch(err => 
       console.error('Error sending order creation emails:', err)
     );
 

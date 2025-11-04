@@ -191,15 +191,28 @@ class EmailService {
         verification: merchantEmail === order.customer_email ? '❌ WRONG - Same as customer!' : '✅ Correct - Different from customer'
       });
 
+      // FINAL VERIFICATION: Ensure we're NOT sending to customer email
+      const finalToEmail = merchantEmail;
+      if (finalToEmail === order.customer_email) {
+        console.error('❌❌❌ BLOCKED: Attempted to send merchant email to customer email!', {
+          attemptedTo: finalToEmail,
+          customerEmail: order.customer_email,
+          action: 'EMAIL BLOCKED - This would be sent to wrong recipient!'
+        });
+        throw new Error(`Cannot send merchant email to customer email: ${finalToEmail}`);
+      }
+
       const response = await resend.emails.send({
         from: fromEmail,
-        to: merchantEmail,  // This MUST be merchant email, NOT customer email
+        to: finalToEmail,  // This MUST be merchant email, NOT customer email
         subject: subject,
         html: html
       });
 
       console.log('✅ New Order email sent to merchant:', {
-        to: merchantEmail,
+        to: finalToEmail,
+        customerEmail: order.customer_email,
+        verifiedDifferent: finalToEmail !== order.customer_email ? '✅ YES' : '❌ NO',
         response: response
       });
       return response;
@@ -344,14 +357,30 @@ class EmailService {
         verification: merchantEmail === order.customer_email ? '❌ WRONG - Same as customer!' : '✅ Correct - Different from customer'
       });
 
+      // FINAL VERIFICATION: Ensure we're NOT sending to customer email
+      const finalToEmail = merchantEmail;
+      if (finalToEmail === order.customer_email) {
+        console.error('❌❌❌ BLOCKED: Attempted to send merchant email to customer email!', {
+          attemptedTo: finalToEmail,
+          customerEmail: order.customer_email,
+          action: 'EMAIL BLOCKED - This would be sent to wrong recipient!'
+        });
+        throw new Error(`Cannot send merchant email to customer email: ${finalToEmail}`);
+      }
+
       const response = await resend.emails.send({
         from: fromEmail,
-        to: merchantEmail,  // This MUST be merchant email, NOT customer email
+        to: finalToEmail,  // This MUST be merchant email, NOT customer email
         subject: subject,
         html: html
       });
 
-      console.log('✅ Processing notification sent to merchant:', merchantEmail, response);
+      console.log('✅ Processing notification sent to merchant:', {
+        to: finalToEmail,
+        customerEmail: order.customer_email,
+        verifiedDifferent: finalToEmail !== order.customer_email ? '✅ YES' : '❌ NO',
+        response: response
+      });
       return response;
     } catch (error) {
       console.error('❌ Error sending Processing notification to merchant:', error);
@@ -495,14 +524,30 @@ class EmailService {
         verification: merchantEmail === order.customer_email ? '❌ WRONG - Same as customer!' : '✅ Correct - Different from customer'
       });
 
+      // FINAL VERIFICATION: Ensure we're NOT sending to customer email
+      const finalToEmail = merchantEmail;
+      if (finalToEmail === order.customer_email) {
+        console.error('❌❌❌ BLOCKED: Attempted to send merchant email to customer email!', {
+          attemptedTo: finalToEmail,
+          customerEmail: order.customer_email,
+          action: 'EMAIL BLOCKED - This would be sent to wrong recipient!'
+        });
+        throw new Error(`Cannot send merchant email to customer email: ${finalToEmail}`);
+      }
+
       const response = await resend.emails.send({
         from: fromEmail,
-        to: merchantEmail,  // This MUST be merchant email, NOT customer email
+        to: finalToEmail,  // This MUST be merchant email, NOT customer email
         subject: subject,
         html: html
       });
 
-      console.log('✅ Completed notification sent to merchant:', merchantEmail, response);
+      console.log('✅ Completed notification sent to merchant:', {
+        to: finalToEmail,
+        customerEmail: order.customer_email,
+        verifiedDifferent: finalToEmail !== order.customer_email ? '✅ YES' : '❌ NO',
+        response: response
+      });
       return response;
     } catch (error) {
       console.error('❌ Error sending Completed notification to merchant:', error);
@@ -513,18 +558,29 @@ class EmailService {
   /**
    * Send emails based on order status
    * Main entry point for order status changes
+   * @param {Object} order - The order object
+   * @param {string|null} previousStatus - Previous order status (for status change detection)
+   * @param {string|null} providedMerchantEmail - Optional merchant email (preferred over database lookup)
    */
-  static async sendOrderStatusEmails(order, previousStatus = null) {
+  static async sendOrderStatusEmails(order, previousStatus = null, providedMerchantEmail = null) {
     try {
       console.log('📧 Starting email notification process:', {
         orderId: order.id || order.woo_order_id,
         status: order.status,
         previousStatus: previousStatus,
         customerEmail: order.customer_email,
-        bankAccountId: order.bank_account_id
+        bankAccountId: order.bank_account_id,
+        providedMerchantEmail: providedMerchantEmail
       });
 
-      const merchantEmail = await this.getMerchantEmail(order.bank_account_id);
+      // Use provided merchant email if available, otherwise look it up from database
+      let merchantEmail = providedMerchantEmail;
+      
+      if (!merchantEmail) {
+        merchantEmail = await this.getMerchantEmail(order.bank_account_id);
+      } else {
+        console.log('📧 Using provided merchant email (from request):', merchantEmail);
+      }
       
       if (!merchantEmail) {
         console.error('❌ Merchant email not found for bank_account_id:', order.bank_account_id);
@@ -537,6 +593,7 @@ class EmailService {
           merchantEmail: merchantEmail,
           customerEmail: order.customer_email,
           bankAccountId: order.bank_account_id,
+          providedMerchantEmail: providedMerchantEmail,
           message: 'This should NEVER happen - merchant and customer emails must be different'
         });
         // Don't return - we'll still try to send, but log the error
@@ -546,7 +603,16 @@ class EmailService {
         customerEmail: order.customer_email,
         merchantEmail: merchantEmail,
         bankAccountId: order.bank_account_id,
+        source: providedMerchantEmail ? 'provided (request)' : 'database lookup',
         emailsMatch: merchantEmail === order.customer_email ? '⚠️ WARNING: MATCH!' : '✅ Different'
+      });
+
+      // CRITICAL SUMMARY: Show exactly where emails will be sent
+      console.log('📧📧📧 EMAIL SENDING SUMMARY 📧📧📧', {
+        'Customer Email TO': order.customer_email,
+        'Merchant Email TO': merchantEmail,
+        'Are They Different?': merchantEmail !== order.customer_email ? '✅ YES - CORRECT' : '❌ NO - THIS IS WRONG!',
+        'Status': order.status
       });
 
       // Send emails based on current status
