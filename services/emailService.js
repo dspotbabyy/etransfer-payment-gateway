@@ -615,8 +615,17 @@ class EmailService {
         'Status': order.status
       });
 
+      // Normalize status for switch statement
+      const normalizedStatus = order.status ? String(order.status).toLowerCase().trim() : null;
+      
+      console.log('🔍 Email service switch statement:', {
+        orderStatus: order.status,
+        normalizedStatus: normalizedStatus,
+        willMatchCase: normalizedStatus
+      });
+      
       // Send emails based on current status
-      switch (order.status?.toLowerCase()) {
+      switch (normalizedStatus) {
         case 'pending':
         case 'on-hold':
         case 'onhold':
@@ -732,11 +741,19 @@ class EmailService {
           break;
 
         default:
-          console.log(`No email template for status: ${order.status}`);
+          console.warn(`⚠️ No email template for status: ${order.status} (normalized: ${normalizedStatus})`);
+          console.warn('⚠️ Valid statuses are: pending, on-hold, processing, completed');
       }
     } catch (error) {
       console.error('❌ Error in sendOrderStatusEmails:', error);
-      // Don't throw - email failures shouldn't break the order flow
+      console.error('❌ Error details:', {
+        orderId: order.id,
+        orderStatus: order.status,
+        errorMessage: error.message,
+        errorStack: error.stack
+      });
+      // Re-throw so caller can see the error in logs
+      throw error;
     }
   }
 }

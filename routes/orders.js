@@ -695,13 +695,39 @@ router.put('/:id', async (req, res) => {
     if (customer_email !== undefined) updateData.customer_email = customer_email;
     if (description !== undefined) updateData.description = description;
 
-    // Store old status for email notification
-    const oldStatus = existingOrder.status;
+    // Log incoming request
+    console.log('📥 PUT /api/orders/:id request:', {
+      orderId: id,
+      requestBody: req.body,
+      statusInBody: status,
+      queryParams: req.query
+    });
+    
+    // Store old status for email notification (normalize for comparison)
+    const oldStatus = existingOrder.status ? String(existingOrder.status).toLowerCase().trim() : null;
+    const newStatus = status ? String(status).toLowerCase().trim() : null;
+    
+    console.log('📊 Status change check:', {
+      orderId: id,
+      oldStatus: oldStatus,
+      oldStatusRaw: existingOrder.status,
+      newStatus: newStatus,
+      newStatusRaw: status,
+      statusProvided: !!status,
+      statusInUpdateData: !!updateData.status,
+      statusChanged: newStatus && oldStatus && newStatus !== oldStatus
+    });
     
     // Get merchant email for email notifications
     const BankAccount = require('../models/BankAccount');
     const bankAccount = await BankAccount.getById(existingOrder.bank_account_id);
     const merchantEmail = bankAccount ? bankAccount.email : null;
+    
+    console.log('📧 Merchant email lookup:', {
+      bankAccountId: existingOrder.bank_account_id,
+      merchantEmail: merchantEmail,
+      found: !!merchantEmail
+    });
     
     if (!merchantEmail) {
       console.warn('⚠️ Could not find merchant email for bank_account_id:', existingOrder.bank_account_id);
@@ -710,23 +736,63 @@ router.put('/:id', async (req, res) => {
     // Update order
     const updatedOrder = await Order.update(id, updateData);
     
-    // Send email notifications if status changed
-    if (status && status !== oldStatus) {
+    console.log('✅ Order updated:', {
+      orderId: id,
+      updatedStatus: updatedOrder.status,
+      previousStatus: existingOrder.status
+    });
+    
+    // Send email notifications if status changed (normalize comparison)
+    // IMPORTANT: Check if status changed BEFORE update and AFTER update
+    const statusActuallyChanged = newStatus && oldStatus && newStatus !== oldStatus;
+    
+    console.log('🔍 Email sending decision:', {
+      orderId: id,
+      statusActuallyChanged: statusActuallyChanged,
+      willSendEmails: statusActuallyChanged,
+      oldStatus: oldStatus,
+      newStatus: newStatus,
+      updatedOrderStatus: updatedOrder.status ? String(updatedOrder.status).toLowerCase().trim() : null
+    });
+    
+    if (statusActuallyChanged) {
       console.log('📧📧📧 STATUS CHANGE DETECTED - SENDING EMAILS 📧📧📧', {
         orderId: id,
         oldStatus: oldStatus,
-        newStatus: status,
+        newStatus: newStatus,
         merchantEmail: merchantEmail,
         customerEmail: updatedOrder.customer_email,
         willSendEmails: true
       });
       
+      // CRITICAL: Ensure updatedOrder has the correct status for email service
+      // The updatedOrder.status should match the new status we're setting
+      if (updatedOrder.status && String(updatedOrder.status).toLowerCase().trim() !== newStatus) {
+        console.warn('⚠️ WARNING: Updated order status does not match new status!', {
+          updatedOrderStatus: updatedOrder.status,
+          newStatus: newStatus,
+          fixing: 'Using newStatus from request'
+        });
+        // Fix the status in updatedOrder for email service
+        updatedOrder.status = newStatus;
+      }
+      
       const EmailService = require('../services/emailService');
       // Pass merchant_email explicitly to ensure correct email is used
       // Email service will fallback to database lookup if merchantEmail is null
-      EmailService.sendOrderStatusEmails(updatedOrder, oldStatus, merchantEmail)
-        .then(() => {
+      // Pass the original oldStatus (not normalized) for email service
+      console.log('🚀 Calling EmailService.sendOrderStatusEmails with:', {
+        orderId: updatedOrder.id,
+        orderStatus: updatedOrder.status,
+        previousStatus: existingOrder.status,
+        merchantEmail: merchantEmail,
+        customerEmail: updatedOrder.customer_email
+      });
+      
+      EmailService.sendOrderStatusEmails(updatedOrder, existingOrder.status, merchantEmail)
+        .then((result) => {
           console.log('✅ Email service completed successfully for order:', id);
+          console.log('📧 Email service result:', result);
         })
         .catch(err => {
           console.error('❌ Error sending order status change emails:', err);
@@ -741,8 +807,14 @@ router.put('/:id', async (req, res) => {
         orderId: id,
         statusProvided: !!status,
         oldStatus: oldStatus,
-        newStatus: status,
-        statusChanged: status && status !== oldStatus
+        newStatus: newStatus,
+        oldStatusRaw: existingOrder.status,
+        newStatusRaw: status,
+        statusChanged: newStatus && oldStatus && newStatus !== oldStatus,
+        reason: !newStatus ? 'Status not provided in request body' : 
+                !oldStatus ? 'Old status not found' :
+                newStatus === oldStatus ? 'Status unchanged (both are ' + newStatus + ')' :
+                'Unknown reason'
       });
     }
     
